@@ -160,34 +160,29 @@ with tabs[0]:
     st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
     st.markdown("- " + C.yield_commentary(vm["US 10Y Yield"], vm["US 5Y Yield"]))
 
-    st.subheader("Macro trends — past year")
-    t1, t2, t3 = st.columns(3)
-    for col, (label, df) in zip(
-            (t1, t2, t3),
-            [("VIX", vm["VIX"]),
-             ("DXY", vm["DXY (USD Index)"]),
-             ("US 10Y Yield", vm["US 10Y Yield"])]):
-        with col:
-            if df.empty:
-                st.metric(label, "n/a")
-                continue
-            ma50 = df["close"].rolling(50).mean()
-            fig = line_chart(df, label, extra={"50-day avg": ma50})
-            fig.update_layout(height=260)
-            st.plotly_chart(fig, use_container_width=True)
-
     st.subheader("Market snapshot")
     cols = st.columns(4)
     for (name, s), col in zip(snaps.items(), cols):
         arrow = "▲" if (s["ret_1d"] or 0) >= 0 else "▼"
         col.metric(name, f"{s['last']:,.1f}",
                    f"{arrow} {s['ret_1d']:+.2f}% today" if s["ret_1d"] is not None else "")
-    vix_last = float(vm["VIX"]["close"].iloc[-1])
-    dxy_last = float(vm["DXY (USD Index)"]["close"].iloc[-1])
-    y10 = float(vm["US 10Y Yield"]["close"].iloc[-1])
-    st.columns(3)[0].metric("VIX", f"{vix_last:.1f}")
-    st.columns(3)[1].metric("DXY", f"{dxy_last:.1f}")
-    st.columns(3)[2].metric("US 10Y", f"{y10:.2f}%")
+    mcols = st.columns(3)
+    for col, (label, df, fmt) in zip(
+            mcols,
+            [("VIX", vm["VIX"], "{:.1f}"),
+             ("DXY", vm["DXY (USD Index)"], "{:.1f}"),
+             ("US 10Y", vm["US 10Y Yield"], "{:.2f}%")]):
+        with col:
+            if df.empty:
+                st.metric(label, "n/a")
+                continue
+            last = float(df["close"].iloc[-1])
+            st.metric(label, fmt.format(last))
+            ma50 = df["close"].rolling(50).mean()
+            fig = line_chart(df, f"{label} — past year",
+                             extra={"50-day avg": ma50})
+            fig.update_layout(height=240, margin=dict(t=35, b=10))
+            st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Fear context & rotation")
     f1, f2 = st.columns(2)
