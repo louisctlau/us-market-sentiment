@@ -24,6 +24,7 @@ from datetime import date, datetime, timezone
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
+import numpy as np
 
 # (decision date, ZQ contract Yahoo ticker). Verified vs federalreserve.gov
 # 2026 FOMC calendar: Oct 27-28, Dec 8-9; 2027: Jan 26-27.
@@ -49,8 +50,8 @@ BUCKET_COLORS = {
 }
 
 
-def _fetch_dff() -> tuple[float, date]:
-    """Effective fed funds rate from FRED (no API key needed)."""
+def _fetch_dff_df() -> pd.DataFrame:
+    """Full DFF history as DataFrame with a date index (forward-fillable)."""
     try:
         from curl_cffi import requests as _rq
         r = _rq.get(DFF_URL, headers={"User-Agent": "Mozilla/5.0"},
@@ -61,11 +62,16 @@ def _fetch_dff() -> tuple[float, date]:
         req = urllib.request.Request(DFF_URL, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=20) as resp:
             df = pd.read_csv(io.BytesIO(resp.read()))
-    df = df.dropna()
     date_col = df.columns[0]
+    df[date_col] = pd.to_datetime(df[date_col])
+    return df.set_index(date_col).sort_index()
+
+
+def _fetch_dff() -> tuple[float, date]:
+    """Effective fed funds rate from FRED (no API key needed)."""
+    df = _fetch_dff_df().dropna()
     last = df.iloc[-1]
-    d = datetime.strptime(str(last[date_col]), "%Y-%m-%d").date()
-    return float(last["DFF"]), d
+    return float(last["DFF"]), last.name.date()
 
 
 def _fetch_zq(ticker: str) -> float:
@@ -167,5 +173,81 @@ def fedwatch_chart(m: dict, title: str) -> go.Figure:
         xaxis=dict(range=[0, max(100, max(m["buckets"].values()) * 100 + 15)]),
         height=280, margin=dict(l=90, r=40, t=40, b=40),
         showlegend=False,
+    )
+    return fig
+
+
+def fedwatch_history(days: int = 90) -> dict[date, pd.DataFrame]:
+    """Daily history of aggregated hike/hold/cut probabilities per meeting.
+
+    Recomputes the futures-implied distribution for each trading day in the
+    lookback window, chaining meetings the same way as fedwatch().
+    Returns {decision_date: DataFrame(date, p_hike, p_hold, p_cut)}.
+    """
+    dff = _fetch_dff_df()[["DFF"]].dropna()
+    today = datetime.now(timezone.utc).date()
+    upcoming = [(d, t) for d, t in MEETINGS if d > today]
+    if not upcoming:
+        raise RuntimeError("no upcoming FOMC meetings in schedule")
+
+    # Align all contract histories on a common trading-day index.
+    prices = {}
+    for _, ticker in upcoming:
+        h = yf.Ticker(ticker).history(period=f"{days + 15}d", auto_adjust=False)
+        if h.empty:
+            raise RuntimeError(f"no ZQ history for {ticker}")
+        h.index = h.index.tz_localize(None).normalize()
+        prices[ticker] = h["Close"]
+    idx = sorted(set().union(*[set(s.index) for s in prices.values()]))
+    idx = [d for d in idx if d.date() <= today][-days:]
+    if not idx:
+        raise RuntimeError("no overlapping ZQ history")
+    frame = pd.DataFrame({"date": idx})
+    for ticker, s in prices.items():
+        frame[ticker] = frame["date"].map(s).ffill()
+
+    dff_daily = dff["DFF"]
+    frame["r_prev"] = frame["date"].map(
+        lambda d: dff_daily.loc[:d].iloc[-1] if d >= dff_daily.index[0] else np.nan
+    ).ffill()
+
+    out: dict[date, pd.DataFrame] = {}
+    r_prev_col = "r_prev"
+    for decision, ticker in upcoming:
+        n_days = _calendar.monthrange(decision.year, decision.month)[1]
+        d = decision.day
+        implied = 100.0 - frame[ticker]
+        r_post = (implied * n_days - frame[r_prev_col] * (d - 1)) / (n_days - d + 1)
+        move_bp = (r_post - frame[r_prev_col]) * 100.0
+        x = move_bp / 25.0
+        lo = np.floor(x + 1e-9)
+        frac = x - lo
+        # aggregate bucket weights into hike / hold / cut
+        p_hold = np.where(lo == 0, 1 - frac, np.where(lo == -1, frac, 0.0))
+        p_hike = np.where(lo >= 1, 1 - frac, 0.0) + np.where(lo >= 0, frac, 0.0)
+        p_cut = 1.0 - p_hold - p_hike
+        out[decision] = pd.DataFrame({
+            "date": frame["date"],
+            "p_hike": np.clip(p_hike, 0, 1),
+            "p_hold": np.clip(p_hold, 0, 1),
+            "p_cut": np.clip(p_cut, 0, 1),
+        })
+        frame[r_prev_col] = r_post  # chain: next meeting starts from here
+    return out
+
+
+def fedwatch_history_chart(df: pd.DataFrame, title: str) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df["date"], y=df["p_hike"] * 100, mode="lines",
+                             name="Hike", line=dict(color="#d62728", width=2)))
+    fig.add_trace(go.Scatter(x=df["date"], y=df["p_hold"] * 100, mode="lines",
+                             name="Hold", line=dict(color="#9e9e9e", width=2)))
+    fig.add_trace(go.Scatter(x=df["date"], y=df["p_cut"] * 100, mode="lines",
+                             name="Cut", line=dict(color="#1f77b4", width=2)))
+    fig.update_layout(
+        title=title, yaxis_title="Probability (%)",
+        yaxis=dict(range=[0, 100]), height=300,
+        margin=dict(l=50, r=20, t=40, b=40),
+        hovermode="x unified", legend=dict(orientation="h", y=1.08),
     )
     return fig

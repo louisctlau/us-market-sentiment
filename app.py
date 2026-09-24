@@ -72,6 +72,12 @@ def load_fedwatch():
 
 
 @st.cache_data(ttl=3600)
+def load_fedwatch_history():
+    # Failures raise instead of being returned (see load_gex note above).
+    return F.fedwatch_history(90)
+
+
+@st.cache_data(ttl=3600)
 def load_earnings():
     try:
         return fetch_earnings(), None
@@ -432,12 +438,23 @@ with tabs[8]:
         c3.metric("Next FOMC decision",
                   nxt["date"].strftime("%b %d"),
                   f"in {nxt['days_away']} days")
+        try:
+            fwh = load_fedwatch_history()
+        except Exception:
+            fwh = None
         for m in fw["meetings"]:
             st.markdown(f"#### {m['date'].strftime('%B %d, %Y')} "
                         f"— decision day ({m['days_away']} days away)")
             st.plotly_chart(F.fedwatch_chart(m, "Implied probabilities"),
                             use_container_width=True)
             st.info(f"**Read:** {F.fedwatch_read(m)}")
+            if fwh and m["date"] in fwh:
+                st.plotly_chart(
+                    F.fedwatch_history_chart(
+                        fwh[m["date"]],
+                        f"{m['date'].strftime('%b %d')} meeting — "
+                        "probability history (90 days)"),
+                    use_container_width=True)
         st.caption("Method: implied avg rate = 100 − ZQ futures price; expected "
                    "post-meeting rate strips out pre-decision days (chained across "
                    "meetings); expected move split across adjacent 25bp buckets. "
