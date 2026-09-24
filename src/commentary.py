@@ -156,6 +156,14 @@ def market_commentary(ctx: dict) -> str:
     if dchg is not None and dchg >= 3:
         risks.append((55, f"a surging dollar (DXY +{dchg:.1f}% in a month — headwind for risk)"))
 
+    # Baseline watch items, always scored so the top concern is named even
+    # when nothing crosses a risk threshold.
+    baseline = [
+        (fear, f"volatility fear (fear context {fear:.0f}/100)"),
+        (hm, f"headline risk ({hm:.0f}/100)"),
+        (rot, f"defensive rotation ({rot:.0f}/100)"),
+    ]
+
     if risks:
         sev, major = max(risks, key=lambda r: r[0])
         risk_txt = (f"**The major risk right now is {major}.** "
@@ -164,8 +172,8 @@ def market_commentary(ctx: dict) -> str:
         risk_txt = (f"**The major risk right now is complacency itself** — VIX {vix_last:.1f} "
                     f"means the market is priced for perfection, so any shock lands harder.")
     else:
-        risk_txt = ("**No single dominant risk** — threats are diffuse and balanced, "
-                    "which is itself consistent with a steady tape.")
+        _, closest = max(baseline, key=lambda r: r[0])
+        risk_txt = (f"**No single dominant risk** — the closest watch item is {closest}.")
 
     watch = ""
     if len(risks) > 1:

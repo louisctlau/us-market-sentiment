@@ -1,8 +1,11 @@
-"""Gamma exposure (GEX) from yfinance option chains.
+"""Gamma exposure (GEX) for index-proxy ETFs.
 
-Method: Black-Scholes gamma per contract using the contract's own implied
-vol, aggregated by strike across the nearest expiries. Dealer positioning
-assumption (standard): dealers are short calls / long puts, so
+Primary source: CBOE delayed-quotes API (public, no key), which publishes
+per-contract gamma and open interest. Fallback: yfinance option chains with
+Black-Scholes gamma estimated from each contract's implied vol.
+
+Dealer positioning assumption (standard): dealers are short calls / long
+puts, so
 
     GEX(strike) = (put_OI * put_gamma - call_OI * call_gamma) * 100 * spot
 
@@ -10,28 +13,29 @@ in dollars of delta-hedge flow per 1-point move (displayed in $M).
 Positive GEX = dealers long gamma (dampens moves, pinning);
 negative GEX = dealers short gamma (amplifies moves).
 
-Approximations (documented, not hidden):
-- risk-free rate fixed at 4% (gamma is insensitive to r)
-- no dividend yield
-- time to expiry clamped at >= 6 hours (avoids 0DTE gamma blow-ups)
-- open interest is prior-day (yfinance); IV rows that are NaN are skipped
+yfinance fallback approximations (documented, not hidden): risk-free rate
+fixed at 4%, no dividend yield, time to expiry clamped at >= 6 hours.
+Open interest is prior-day on both sources.
 """
 from __future__ import annotations
 
 from datetime import date
+from urllib.request import Request, urlopen
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import yfinance as yf
 
+CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{}.json"
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+# --- yfinance fallback: Black-Scholes gamma ---
 RISK_FREE = 0.04
-MIN_T_YEARS = 0.25 / 365  # 6 hours
+MIN_T_YEARS = 0.25 / 365
 
 
 def _bs_gamma(S: float, K: np.ndarray, T: float, r: float,
               sigma: np.ndarray) -> np.ndarray:
-    """Black-Scholes gamma (same for calls and puts), vectorized over K/sigma."""
     with np.errstate(divide="ignore", invalid="ignore"):
         d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
         n_prime = np.exp(-0.5 * d1 ** 2) / np.sqrt(2 * np.pi)
@@ -39,13 +43,47 @@ def _bs_gamma(S: float, K: np.ndarray, T: float, r: float,
     return np.where(np.isfinite(gamma), gamma, 0.0)
 
 
-def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
-    """Aggregate GEX by strike for an ETF. Raises RuntimeError if no chain data."""
+def _parse_cboe_symbol(sym: str) -> tuple[str, str, float]:
+    """'SPY260924C00550000' -> (expiry 'YYYY-MM-DD', side, strike)."""
+    expiry = f"20{sym[3:5]}-{sym[5:7]}-{sym[7:9]}"
+    side = "calls" if sym[9] == "C" else "puts"
+    strike = int(sym[10:]) / 1000.0
+    return expiry, side, strike
+
+
+def _from_cboe(etf: str, n_expiries: int) -> dict:
+    import json
+    req = Request(CBOE_URL.format(etf), headers=UA)
+    with urlopen(req, timeout=25) as resp:
+        payload = json.loads(resp.read().decode())
+    data = payload["data"]
+    spot = float(data["current_price"])
+    opts = data.get("options") or []
+    if not opts:
+        raise RuntimeError(f"CBOE returned no contracts for {etf}")
+
+    rows = []
+    for o in opts:
+        oi = float(o.get("open_interest") or 0)
+        gamma = float(o.get("gamma") or 0)
+        if oi <= 0 or gamma <= 0:
+            continue
+        expiry, side, strike = _parse_cboe_symbol(o["option"])
+        sign = 1.0 if side == "puts" else -1.0
+        rows.append({"strike": strike, "expiry": expiry, "side": side,
+                     "gex_m": sign * gamma * oi * 100.0 * spot / 1e6})
+    if not rows:
+        raise RuntimeError(f"CBOE returned no usable OI/gamma for {etf}")
+    df = pd.DataFrame(rows)
+    expiries = sorted(df["expiry"].unique())[:n_expiries]
+    df = df[df["expiry"].isin(expiries)]
+    return {"spot": spot, "expiries": expiries, "contracts": df}
+
+
+def _from_yfinance(etf: str, n_expiries: int) -> dict:
+    import yfinance as yf
     t = yf.Ticker(etf)
-    try:
-        expiries = list(t.options)[:n_expiries]
-    except Exception as e:
-        raise RuntimeError(f"no expiry list for {etf}: {e}")
+    expiries = list(t.options or [])[:n_expiries]
     if not expiries:
         raise RuntimeError(f"no expiries for {etf}")
     hist = t.history(period="5d")
@@ -53,7 +91,6 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
         raise RuntimeError(f"no price history for {etf}")
     spot = float(hist["Close"].iloc[-1])
     today = date.today()
-
     rows = []
     for exp in expiries:
         T = max((date.fromisoformat(exp) - today).days / 365.0, MIN_T_YEARS)
@@ -74,43 +111,55 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
             iv = df["impliedVolatility"].to_numpy(float)
             oi = df["openInterest"].to_numpy(float)
             gamma = _bs_gamma(spot, K, T, RISK_FREE, iv)
-            # $ of hedge flow per 1-pt move, signed by dealer positioning
             df["gex_m"] = sign * gamma * oi * 100.0 * spot / 1e6
             df["side"] = side
             rows.append(df[["strike", "gex_m", "side"]])
     if not rows:
         raise RuntimeError(f"no usable option data for {etf}")
+    contracts = pd.concat(rows)
+    contracts["expiry"] = ""
+    return {"spot": spot, "expiries": expiries, "contracts": contracts}
 
-    all_ = pd.concat(rows)
-    piv = all_.pivot_table(index="strike", columns="side", values="gex_m",
-                           aggfunc="sum").fillna(0.0)
+
+def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
+    """Aggregate GEX by strike. Tries CBOE first, then yfinance."""
+    errors = []
+    for fn in (_from_cboe, _from_yfinance):
+        try:
+            src = fn(etf, n_expiries)
+            break
+        except Exception as e:
+            errors.append(f"{fn.__name__}: {e}")
+    else:
+        raise RuntimeError("; ".join(errors))
+
+    contracts = src["contracts"]
+    piv = contracts.pivot_table(index="strike", columns="side", values="gex_m",
+                                aggfunc="sum").fillna(0.0)
     for c in ("calls", "puts"):
         if c not in piv.columns:
             piv[c] = 0.0
     piv["net_gex"] = piv["puts"] + piv["calls"]  # calls already negative
     piv = piv.sort_index()
 
-    # Key levels
+    spot = src["spot"]
     total_net = float(piv["net_gex"].sum())
-    # call wall: strike with largest call-side magnitude above spot (resistance)
     above = piv[piv.index >= spot]
     below = piv[piv.index <= spot]
-    call_wall = float(above["calls"].idxmin()) if not above.empty and (above["calls"] < 0).any() else None
-    put_wall = float(below["puts"].idxmax()) if not below.empty and (below["puts"] > 0).any() else None
-    # zero gamma: first strike (ascending) where cumulative net GEX flips + to -
+    call_wall = (float(above["calls"].idxmin())
+                 if not above.empty and (above["calls"] < 0).any() else None)
+    put_wall = (float(below["puts"].idxmax())
+                if not below.empty and (below["puts"] > 0).any() else None)
     cumsum = piv["net_gex"].cumsum()
-    zero_gamma = None
     pos = cumsum > 0
     flip = pos & (~pos.shift(-1, fill_value=True))
     hits = flip[flip].index
     zero_gamma = float(hits[0]) if len(hits) else None
 
-    return {
-        "etf": etf, "spot": spot, "expiries": expiries,
-        "strikes": piv.reset_index(), "total_net": total_net,
-        "call_wall": call_wall, "put_wall": put_wall,
-        "zero_gamma": zero_gamma,
-    }
+    return {"etf": etf, "spot": spot, "expiries": src["expiries"],
+            "strikes": piv.reset_index(), "total_net": total_net,
+            "call_wall": call_wall, "put_wall": put_wall,
+            "zero_gamma": zero_gamma}
 
 
 def gex_chart(g: dict, title: str) -> go.Figure:
@@ -144,5 +193,6 @@ def gex_read(g: dict) -> str:
     tone = ("dealers long gamma — moves tend to be dampened/pinned"
             if t > 0 else
             "dealers short gamma — moves tend to be amplified")
-    zg = f" Zero-gamma at {g['zero_gamma']:.0f}: above it, volatility can expand fast." if g["zero_gamma"] else ""
-    return (f"Net GEX ${t:+.0f}M/pt — {tone}.{zg}")
+    zg = (f" Zero-gamma at {g['zero_gamma']:.0f}: above it, volatility can "
+          f"expand fast." if g["zero_gamma"] else "")
+    return f"Net GEX ${t:+.0f}M/pt — {tone}.{zg}"

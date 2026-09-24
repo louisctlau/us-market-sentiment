@@ -385,9 +385,10 @@ with tabs[7]:
                                       f"({', '.join(g['expiries'])})"),
                         use_container_width=True)
         st.info(f"**Read:** {G.gex_read(g)}")
-    st.caption("Method: Black-Scholes gamma per contract from its implied vol; "
+    st.caption("Method: per-contract gamma × open interest from CBOE delayed quotes "
+               "(yfinance chains + Black-Scholes gamma as fallback). "
                "GEX = (put OI × put γ − call OI × call γ) × 100 × spot. "
-               "Assumes r = 4%, no dividends, T ≥ 6h.")
+               "Assumes dealers short calls / long puts.")
 
 st.divider()
 st.caption("Data: Yahoo Finance (prices), Google News RSS (headlines), ForexFactory "
