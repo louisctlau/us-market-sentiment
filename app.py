@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -28,6 +29,8 @@ from src.news import fetch_headlines, risk_meter
 from src.technicals import rsi, sma, technical_snapshot
 
 st.set_page_config(page_title="US Market Sentiment", layout="wide")
+# Rerun the script every 15 min so data stays fresh without a manual reload.
+st_autorefresh(interval=15 * 60 * 1000, key="auto_refresh")
 st.title("US Market Sentiment Dashboard")
 st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals, sectors, headlines, calendar")
 
