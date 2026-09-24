@@ -384,10 +384,6 @@ with tabs[7]:
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
                "dealers long gamma (dampens moves); negative = short gamma "
                "(amplifies moves). Nearest 3 expiries, prior-day open interest. [gex-v2]")
-    import inspect as _inspect
-    _probe = (f"engine={'cboe' if hasattr(G, '_from_cboe') else 'legacy'} "
-              f"src-hash={hash(_inspect.getsource(G.gex_by_strike)) & 0xffff}")
-    st.caption(f"Runtime probe: {_probe}")
     for name, etf in [("S&P 500", "SPY"), ("Nasdaq 100", "QQQ"),
                       ("Russell 2000", "IWM")]:
         try:
