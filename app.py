@@ -160,6 +160,22 @@ with tabs[0]:
     st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
     st.markdown("- " + C.yield_commentary(vm["US 10Y Yield"], vm["US 5Y Yield"]))
 
+    st.subheader("Macro trends — past year")
+    t1, t2, t3 = st.columns(3)
+    for col, (label, df) in zip(
+            (t1, t2, t3),
+            [("VIX", vm["VIX"]),
+             ("DXY", vm["DXY (USD Index)"]),
+             ("US 10Y Yield", vm["US 10Y Yield"])]):
+        with col:
+            if df.empty:
+                st.metric(label, "n/a")
+                continue
+            ma50 = df["close"].rolling(50).mean()
+            fig = line_chart(df, label, extra={"50-day avg": ma50})
+            fig.update_layout(height=260)
+            st.plotly_chart(fig, use_container_width=True)
+
     st.subheader("Market snapshot")
     cols = st.columns(4)
     for (name, s), col in zip(snaps.items(), cols):
