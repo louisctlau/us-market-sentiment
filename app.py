@@ -9,6 +9,7 @@ import streamlit as st
 from src import sentiment as S
 from src.calendar_events import fetch_calendar
 from src.data import (
+    CROSS_ASSETS,
     DEFENSIVE_SECTORS,
     INDICES,
     OFFENSIVE_SECTORS,
@@ -17,6 +18,7 @@ from src.data import (
     fetch_all,
     pct_change,
 )
+from src.earnings import fetch_earnings
 from src.news import fetch_headlines, risk_meter
 from src.technicals import rsi, sma, technical_snapshot
 
@@ -30,7 +32,8 @@ def load_data():
     idx = fetch_all(INDICES, period="1y")
     vm = fetch_all(VOL_MACRO, period="1y")
     sec = fetch_all(SECTORS, period="6mo")
-    return idx, vm, sec
+    xa = fetch_all(CROSS_ASSETS, period="1y")
+    return idx, vm, sec, xa
 
 
 @st.cache_data(ttl=900)
@@ -50,16 +53,30 @@ def load_calendar():
         return [], str(e)
 
 
-def gauge(value: float, title: str, color_ranges=True) -> go.Figure:
+@st.cache_data(ttl=3600)
+def load_earnings():
+    try:
+        return fetch_earnings(), None
+    except Exception as e:
+        return [], str(e)
+
+
+def gauge(value: float, title: str, color_ranges=True, invert=False) -> go.Figure:
+    steps = [{"range": [0, 25], "color": "#e74c3c"},
+             {"range": [25, 45], "color": "#f39c12"},
+             {"range": [45, 70], "color": "#f1c40f"},
+             {"range": [70, 100], "color": "#2ecc71"}]
+    if invert:  # high = bad (fear, risk-off)
+        steps = [{"range": [0, 25], "color": "#2ecc71"},
+                 {"range": [25, 45], "color": "#f1c40f"},
+                 {"range": [45, 70], "color": "#f39c12"},
+                 {"range": [70, 100], "color": "#e74c3c"}]
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=value, title={"text": title},
         number={"suffix": ""},
         gauge={"axis": {"range": [0, 100]},
                "bar": {"color": "#1f77b4"},
-               "steps": [{"range": [0, 25], "color": "#e74c3c"},
-                         {"range": [25, 45], "color": "#f39c12"},
-                         {"range": [45, 70], "color": "#f1c40f"},
-                         {"range": [70, 100], "color": "#2ecc71"}] if color_ranges else []},
+               "steps": steps if color_ranges else []},
     ))
     fig.update_layout(height=280, margin=dict(t=40, b=10))
     return fig
@@ -78,7 +95,7 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
     return fig
 
 
-idx, vm, sec = load_data()
+idx, vm, sec, xa = load_data()
 snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
 
 components = {
@@ -90,8 +107,11 @@ components = {
 }
 score, breakdown = S.composite(components)
 
+fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
+rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
+
 tabs = st.tabs(["Overview", "Indices", "Volatility & Macro", "Sector Rotation",
-                "News Risk", "Economic Calendar"])
+                "News Risk", "Economic Calendar", "Earnings"])
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
@@ -122,6 +142,33 @@ with tabs[0]:
     st.columns(3)[0].metric("VIX", f"{vix_last:.1f}")
     st.columns(3)[1].metric("DXY", f"{dxy_last:.1f}")
     st.columns(3)[2].metric("US 10Y", f"{y10:.2f}%")
+
+    st.subheader("Fear context & rotation")
+    f1, f2 = st.columns(2)
+    with f1:
+        st.plotly_chart(gauge(fear, "Fear Context (VIX/SPX)", invert=True),
+                        use_container_width=True)
+        st.caption(f"{fear_detail} — market volatility, not news.")
+    with f2:
+        st.plotly_chart(gauge(rot, "Risk-Off Rotation", invert=True),
+                        use_container_width=True)
+        st.caption(f"{rot_detail} — growth → safe-haven flow, 1M.")
+
+    st.subheader("Cross-asset context")
+    xa_cols = st.columns(5)
+    xa_defs = [("VIX", vm["VIX"], "{:.1f}"),
+               ("DXY", vm["DXY (USD Index)"], "{:.1f}"),
+               ("WTI Crude", xa["WTI Crude Oil"], "${:.1f}"),
+               ("Gold", xa["Gold"], "${:.0f}"),
+               ("US 10Y", vm["US 10Y Yield"], "{:.2f}%")]
+    for col, (label, df, fmt) in zip(xa_cols, xa_defs):
+        if df.empty:
+            col.metric(label, "n/a")
+            continue
+        last = float(df["close"].iloc[-1])
+        r1m = pct_change(df, 21)
+        col.metric(label, fmt.format(last),
+                   f"{r1m:+.1f}% 1M" if r1m is not None else "")
 
 # ---------------- INDICES ----------------
 with tabs[1]:
@@ -269,6 +316,23 @@ with tabs[5]:
     else:
         st.info("No events found.")
 
+# ---------------- EARNINGS ----------------
+with tabs[6]:
+    earnings, err = load_earnings()
+    if err:
+        st.warning(f"Earnings feed unavailable: {err}")
+    elif earnings:
+        st.subheader(f"Earnings — next 7 days ({len(earnings)} notable)")
+        rows = [{"Date": e["date"], "Time": e["time"] or "—", "Symbol": e["symbol"],
+                 "Company": e["name"], "Mkt Cap ($B)": e["mcap_b"],
+                 "EPS est.": e["eps_forecast"] or "—",
+                 "Revenue est.": e["revenue_forecast"] or "—"} for e in earnings]
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.caption("Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap.")
+    else:
+        st.info("No notable earnings in the next 7 days.")
+
 st.divider()
 st.caption("Data: Yahoo Finance (prices), Google News RSS (headlines), ForexFactory "
-           "(calendar). Educational — not investment advice. Refreshes every 15 min.")
+           "(calendar), Nasdaq (earnings). Educational — not investment advice. "
+           "Refreshes every 15 min.")

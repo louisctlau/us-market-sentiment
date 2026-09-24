@@ -33,6 +33,15 @@ SECTORS = {
 OFFENSIVE_SECTORS = {"Technology", "Cons. Disc.", "Communication", "Industrials", "Financials"}
 DEFENSIVE_SECTORS = {"Cons. Staples", "Utilities", "Health Care", "Real Estate"}
 
+# Cross-asset context (free Yahoo futures/ETF series)
+CROSS_ASSETS = {
+    "WTI Crude Oil": "CL=F",
+    "Gold": "GC=F",
+    "20Y+ Treasury (TLT)": "TLT",
+}
+GROWTH_SECTORS = {"Technology", "Cons. Disc."}
+HAVEN_SECTORS = {"Utilities", "Cons. Staples"}
+
 
 def fetch_history(ticker: str, period: str = "1y") -> pd.DataFrame:
     """Daily OHLCV with a flat DatetimeIndex and lowercase columns."""

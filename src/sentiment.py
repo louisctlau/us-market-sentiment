@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .data import DEFENSIVE_SECTORS, OFFENSIVE_SECTORS, pct_change
+from .data import DEFENSIVE_SECTORS, GROWTH_SECTORS, HAVEN_SECTORS, OFFENSIVE_SECTORS, pct_change
 from .technicals import rsi, sma
 
 
@@ -38,6 +38,40 @@ def volatility_score(vix_df) -> tuple[float, str]:
         score = _clip(score - 15)
         detail += f" (+{spike:.0f}% in 5d — spike penalty)"
     return score, detail
+
+
+def fear_context(vix_df, spx_df) -> tuple[float, str]:
+    """VIX/SPX-driven fear, 0 = calm … 100 = panic. Market volatility, not news."""
+    vix = vix_df["close"]
+    last = float(vix.iloc[-1])
+    # Level: VIX 12 -> 0, 40 -> 100
+    level = _clip((last - 12) / (40 - 12) * 100)
+    # Spike: +50% in 20d -> 100
+    spike = _clip(max(0.0, float(vix.iloc[-1] / vix.iloc[-21] - 1)) / 0.5 * 100) if len(vix) > 21 else 0.0
+    # SPX drawdown from 20d high: -10% -> 100
+    hi = float(spx_df["close"].iloc[-21:].max()) if len(spx_df) > 21 else float(spx_df["close"].iloc[-1])
+    dd = _clip(max(0.0, 1 - float(spx_df["close"].iloc[-1]) / hi) / 0.10 * 100)
+    score = _clip(0.6 * level + 0.25 * spike + 0.15 * dd)
+    label = ("panic" if score >= 70 else "elevated" if score >= 40
+             else "calm" if score < 20 else "normal")
+    return score, f"VIX {last:.1f} — {label}"
+
+
+def risk_off_rotation(sector_data: dict, tlt_df) -> tuple[float, str]:
+    """Growth -> safe-haven flow, 0 = risk-on … 100 = full risk-off (1M returns)."""
+    growth = [r for n in GROWTH_SECTORS if n in sector_data
+              for r in [pct_change(sector_data[n], 21)] if r is not None]
+    haven = [r for n in HAVEN_SECTORS if n in sector_data
+             for r in [pct_change(sector_data[n], 21)] if r is not None]
+    tlt_r = pct_change(tlt_df, 21)
+    if tlt_r is not None:
+        haven.append(tlt_r)
+    if not growth or not haven:
+        return 50.0, "insufficient data"
+    spread = float(np.mean(haven) - np.mean(growth))  # + = rotating to safety
+    score = _clip(50 + spread / 6 * 50)  # +/-6pp maps to 0/100
+    tilt = "risk-off" if spread > 1 else "risk-on" if spread < -1 else "mixed"
+    return score, f"{tilt} flow ({spread:+.1f}pp haven-vs-growth 1M)"
 
 
 def macro_score(dxy_df, y10_df, y5_df) -> tuple[float, str]:
