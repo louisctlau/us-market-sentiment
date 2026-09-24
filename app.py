@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from src import commentary as C
+from src import gex as G
 from src import sentiment as S
 from src.calendar_events import fetch_calendar
 from src.data import (
@@ -52,6 +53,14 @@ def load_calendar():
         return fetch_calendar(), None
     except Exception as e:
         return [], str(e)
+
+
+@st.cache_data(ttl=3600)
+def load_gex(etf: str):
+    try:
+        return G.gex_by_strike(etf), None
+    except Exception as e:
+        return None, str(e)
 
 
 @st.cache_data(ttl=3600)
@@ -115,7 +124,7 @@ headlines, news_err = load_news()
 headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
 
 tabs = st.tabs(["Overview", "Indices", "Volatility & Macro", "Sector Rotation",
-                "News Risk", "Economic Calendar", "Earnings"])
+                "News Risk", "Economic Calendar", "Earnings", "GEX"])
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
@@ -349,6 +358,36 @@ with tabs[6]:
         st.caption("Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap.")
     else:
         st.info("No notable earnings in the next 7 days.")
+
+# ---------------- GEX ----------------
+with tabs[7]:
+    st.subheader("Gamma exposure (GEX)")
+    st.caption("Dealer gamma positioning from listed option chains — SPY/QQQ/IWM "
+               "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
+               "dealers long gamma (dampens moves); negative = short gamma "
+               "(amplifies moves). Nearest 3 expiries, prior-day open interest.")
+    for name, etf in [("S&P 500", "SPY"), ("Nasdaq 100", "QQQ"),
+                      ("Russell 2000", "IWM")]:
+        g, err = load_gex(etf)
+        st.markdown(f"#### {name} ({etf})")
+        if err:
+            st.warning(f"GEX unavailable for {etf}: {err}")
+            continue
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Net GEX", f"${g['total_net']:+.0f}M/pt")
+        m2.metric("Put wall (support)",
+                  f"{g['put_wall']:.0f}" if g["put_wall"] else "—")
+        m3.metric("Call wall (resistance)",
+                  f"{g['call_wall']:.0f}" if g["call_wall"] else "—")
+        m4.metric("Zero-gamma",
+                  f"{g['zero_gamma']:.0f}" if g["zero_gamma"] else "—")
+        st.plotly_chart(G.gex_chart(g, f"{name} — net GEX by strike "
+                                      f"({', '.join(g['expiries'])})"),
+                        use_container_width=True)
+        st.info(f"**Read:** {G.gex_read(g)}")
+    st.caption("Method: Black-Scholes gamma per contract from its implied vol; "
+               "GEX = (put OI × put γ − call OI × call γ) × 100 × spot. "
+               "Assumes r = 4%, no dividends, T ≥ 6h.")
 
 st.divider()
 st.caption("Data: Yahoo Finance (prices), Google News RSS (headlines), ForexFactory "
