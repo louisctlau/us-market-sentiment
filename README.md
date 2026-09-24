@@ -13,7 +13,7 @@ A composite **0–100 sentiment score** (100 = most bullish) blends five compone
 | Trend | 25% | Share of indices above their 50-day average |
 | Momentum | 20% | Average RSI(14), mapped 30→0 / 50→50 / 70→100 |
 | Volatility | 20% | VIX level inverted (12→100, 40→0), minus spike penalty |
-| Macro | 15% | DXY vs 50-day + 10Y–2Y yield curve shape |
+| Macro | 15% | DXY vs 50-day + 10Y–5Y yield curve shape |
 | Sectors | 20% | Offensive vs defensive 1-month return spread |
 
 Regimes: ≥70 Risk-On · 45–70 Neutral · 25–45 Risk-Off · <25 Extreme Fear.

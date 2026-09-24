@@ -40,7 +40,7 @@ def volatility_score(vix_df) -> tuple[float, str]:
     return score, detail
 
 
-def macro_score(dxy_df, y10_df, y2_df) -> tuple[float, str]:
+def macro_score(dxy_df, y10_df, y5_df) -> tuple[float, str]:
     parts, notes = [], []
     # USD: falling dollar = risk-on
     dxy = dxy_df["close"]
@@ -49,8 +49,8 @@ def macro_score(dxy_df, y10_df, y2_df) -> tuple[float, str]:
         below = bool(dxy.iloc[-1] < d50)
         parts.append(75.0 if below else 35.0)
         notes.append("DXY below 50d avg" if below else "DXY above 50d avg")
-    # Yield curve: uninverted = healthier backdrop
-    spread = float(y10_df["close"].iloc[-1] - y2_df["close"].iloc[-1])
+    # Yield curve (10Y-5Y segment): positive slope = healthier backdrop
+    spread = float(y10_df["close"].iloc[-1] - y5_df["close"].iloc[-1])
     if spread >= 0.5:
         parts.append(80.0)
     elif spread >= 0:
@@ -59,7 +59,7 @@ def macro_score(dxy_df, y10_df, y2_df) -> tuple[float, str]:
         parts.append(35.0)
     else:
         parts.append(15.0)
-    notes.append(f"10Y-2Y spread {spread:+.2f}pp")
+    notes.append(f"10Y-5Y spread {spread:+.2f}pp")
     score = _clip(float(np.mean(parts))) if parts else 50.0
     return score, "; ".join(notes)
 

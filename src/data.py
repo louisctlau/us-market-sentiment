@@ -15,7 +15,7 @@ VOL_MACRO = {
     "VIX3M": "^VIX3M",
     "DXY (USD Index)": "DX-Y.NYB",
     "US 10Y Yield": "^TNX",
-    "US 2Y Yield": "^FVX",
+    "US 5Y Yield": "^FVX",  # 5-year Treasury yield (^FVX); no free Yahoo 2Y series
 }
 SECTORS = {
     "Technology": "XLK",

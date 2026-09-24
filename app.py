@@ -85,7 +85,7 @@ components = {
     "Trend": S.trend_score(snaps),
     "Momentum": S.momentum_score(snaps),
     "Volatility": S.volatility_score(vm["VIX"]),
-    "Macro": S.macro_score(vm["DXY (USD Index)"], vm["US 10Y Yield"], vm["US 2Y Yield"]),
+    "Macro": S.macro_score(vm["DXY (USD Index)"], vm["US 10Y Yield"], vm["US 5Y Yield"]),
     "Sectors": S.sector_score(sec),
 }
 score, breakdown = S.composite(components)
@@ -172,20 +172,20 @@ with tabs[2]:
     c3, c4 = st.columns(2)
     with c3:
         y10 = vm["US 10Y Yield"].tail(252)["close"]
-        y2 = vm["US 2Y Yield"].tail(252)["close"]
+        y5 = vm["US 5Y Yield"].tail(252)["close"]
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=y10.index, y=y10, name="10Y"))
-        fig.add_trace(go.Scatter(x=y2.index, y=y2, name="2Y"))
+        fig.add_trace(go.Scatter(x=y5.index, y=y5, name="5Y"))
         fig.update_layout(title="US Treasury yields — 1 year", height=320,
                           margin=dict(t=40, b=10))
         st.plotly_chart(fig, use_container_width=True)
     with c4:
-        spread = (vm["US 10Y Yield"]["close"] - vm["US 2Y Yield"]["close"]).tail(252)
+        spread = (vm["US 10Y Yield"]["close"] - vm["US 5Y Yield"]["close"]).tail(252)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=spread.index, y=spread, name="10Y − 2Y",
+        fig.add_trace(go.Scatter(x=spread.index, y=spread, name="10Y − 5Y",
                                  fill="tozeroy"))
         fig.add_hline(y=0, line_dash="dash", line_color="red")
-        fig.update_layout(title="Yield curve (10Y − 2Y spread) — 1 year",
+        fig.update_layout(title="Yield curve (10Y − 5Y spread) — 1 year",
                           height=320, margin=dict(t=40, b=10))
         st.plotly_chart(fig, use_container_width=True)
         last_spread = float(spread.iloc[-1])
