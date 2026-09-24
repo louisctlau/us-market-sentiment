@@ -365,7 +365,7 @@ with tabs[7]:
     st.caption("Dealer gamma positioning from listed option chains — SPY/QQQ/IWM "
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
                "dealers long gamma (dampens moves); negative = short gamma "
-               "(amplifies moves). Nearest 3 expiries, prior-day open interest.")
+               "(amplifies moves). Nearest 3 expiries, prior-day open interest. [gex-v2]")
     for name, etf in [("S&P 500", "SPY"), ("Nasdaq 100", "QQQ"),
                       ("Russell 2000", "IWM")]:
         g, err = load_gex(etf)

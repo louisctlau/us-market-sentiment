@@ -54,8 +54,16 @@ def _parse_cboe_symbol(sym: str) -> tuple[str, str, float]:
 def _from_cboe(etf: str, n_expiries: int) -> dict:
     import json
     req = Request(CBOE_URL.format(etf), headers=UA)
-    with urlopen(req, timeout=25) as resp:
-        payload = json.loads(resp.read().decode())
+    try:
+        with urlopen(req, timeout=25) as resp:
+            raw = resp.read().decode()
+    except Exception as e:
+        raise RuntimeError(f"CBOE request failed for {etf}: {e}")
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        raise RuntimeError(f"CBOE returned non-JSON for {etf} "
+                           f"(likely bot-blocked, {len(raw)} bytes)")
     data = payload["data"]
     spot = float(data["current_price"])
     opts = data.get("options") or []
@@ -131,7 +139,7 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
         except Exception as e:
             errors.append(f"{fn.__name__}: {e}")
     else:
-        raise RuntimeError("; ".join(errors))
+        raise RuntimeError("[gex-v2] " + "; ".join(errors))
 
     contracts = src["contracts"]
     piv = contracts.pivot_table(index="strike", columns="side", values="gex_m",
