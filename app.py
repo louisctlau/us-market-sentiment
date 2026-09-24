@@ -57,10 +57,9 @@ def load_calendar():
 
 @st.cache_data(ttl=3600)
 def load_gex(etf: str):
-    try:
-        return G.gex_by_strike(etf), None
-    except Exception as e:
-        return None, str(e)
+    # Failures raise instead of being returned: cache_data never caches
+    # exceptions, so a stale error string can't persist across deploys.
+    return G.gex_by_strike(etf)
 
 
 @st.cache_data(ttl=3600)
@@ -366,13 +365,19 @@ with tabs[7]:
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
                "dealers long gamma (dampens moves); negative = short gamma "
                "(amplifies moves). Nearest 3 expiries, prior-day open interest. [gex-v2]")
+    import inspect as _inspect
+    _probe = (f"engine={'cboe' if hasattr(G, '_from_cboe') else 'legacy'} "
+              f"src-hash={hash(_inspect.getsource(G.gex_by_strike)) & 0xffff}")
+    st.caption(f"Runtime probe: {_probe}")
     for name, etf in [("S&P 500", "SPY"), ("Nasdaq 100", "QQQ"),
                       ("Russell 2000", "IWM")]:
-        g, err = load_gex(etf)
-        st.markdown(f"#### {name} ({etf})")
-        if err:
-            st.warning(f"GEX unavailable for {etf}: {err}")
+        try:
+            g = load_gex(etf)
+        except Exception as e:
+            st.markdown(f"#### {name} ({etf})")
+            st.warning(f"GEX unavailable for {etf}: {e}")
             continue
+        st.markdown(f"#### {name} ({etf})")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Net GEX", f"${g['total_net']:+.0f}M/pt")
         m2.metric("Put wall (support)",
