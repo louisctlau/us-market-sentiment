@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from src import commentary as C
+from src import fedwatch as F
 from src import gex as G
 from src import sentiment as S
 from src.calendar_events import fetch_calendar
@@ -62,6 +63,12 @@ def load_gex(etf: str):
     # Failures raise instead of being returned: cache_data never caches
     # exceptions, so a stale error string can't persist across deploys.
     return G.gex_by_strike(etf)
+
+
+@st.cache_data(ttl=900)
+def load_fedwatch():
+    # Failures raise instead of being returned (see load_gex note above).
+    return F.fedwatch()
 
 
 @st.cache_data(ttl=3600)
@@ -126,7 +133,7 @@ headlines, news_err = load_news()
 headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
 
 tabs = st.tabs(["Overview", "Indices", "Volatility & Macro", "Sector Rotation",
-                "News Risk", "Economic Calendar", "Earnings", "GEX"])
+                "News Risk", "Economic Calendar", "Earnings", "GEX", "Fed Watch"])
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
@@ -405,7 +412,40 @@ with tabs[7]:
                "GEX = (put OI × put γ − call OI × call γ) × 100 × spot. "
                "Assumes dealers short calls / long puts.")
 
+with tabs[8]:
+    st.subheader("Fed Watch — rate probabilities")
+    st.caption("Market-implied odds of Fed moves at upcoming FOMC meetings, "
+               "stripped from 30-day Fed Funds futures (CME ZQ).")
+    try:
+        fw = load_fedwatch()
+    except Exception as e:
+        st.warning(f"Fed Watch unavailable: {e}")
+        fw = None
+    if fw:
+        lo, hi = fw["target_range"]
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Effective fed funds rate",
+                  f"{fw['effective_rate']:.2f}%",
+                  help=f"FRED DFF as of {fw['effective_date']}")
+        c2.metric("Target range", f"{lo:.2f}–{hi:.2f}%")
+        nxt = fw["meetings"][0]
+        c3.metric("Next FOMC decision",
+                  nxt["date"].strftime("%b %d"),
+                  f"in {nxt['days_away']} days")
+        for m in fw["meetings"]:
+            st.markdown(f"#### {m['date'].strftime('%B %d, %Y')} "
+                        f"— decision day ({m['days_away']} days away)")
+            st.plotly_chart(F.fedwatch_chart(m, "Implied probabilities"),
+                            use_container_width=True)
+            st.info(f"**Read:** {F.fedwatch_read(m)}")
+        st.caption("Method: implied avg rate = 100 − ZQ futures price; expected "
+                   "post-meeting rate strips out pre-decision days (chained across "
+                   "meetings); expected move split across adjacent 25bp buckets. "
+                   "Data: Yahoo Finance (ZQ), FRED (DFF). Educational — not "
+                   "investment advice.")
+
 st.divider()
 st.caption("Data: Yahoo Finance (prices), Google News RSS (headlines), ForexFactory "
-           "(calendar), Nasdaq (earnings). Educational — not investment advice. "
+           "(calendar), Nasdaq (earnings), CME ZQ futures + FRED (Fed Watch). "
+           "Educational — not investment advice. "
            "Refreshes every 15 min.")
