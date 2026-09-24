@@ -5,6 +5,8 @@ from __future__ import annotations
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from src import commentary as C
 from src import gex as G
@@ -35,7 +37,7 @@ def load_data():
     vm = fetch_all(VOL_MACRO, period="1y")
     sec = fetch_all(SECTORS, period="6mo")
     xa = fetch_all(CROSS_ASSETS, period="1y")
-    return idx, vm, sec, xa
+    return idx, vm, sec, xa, datetime.now(timezone.utc)
 
 
 @st.cache_data(ttl=900)
@@ -104,7 +106,8 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
     return fig
 
 
-idx, vm, sec, xa = load_data()
+idx, vm, sec, xa, data_ts = load_data()
+st.caption(f"Data refreshed {data_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} · auto-refreshes every 15 min")
 snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
 
 components = {
