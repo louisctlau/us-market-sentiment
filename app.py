@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from src import commentary as C
 from src import sentiment as S
 from src.calendar_events import fetch_calendar
 from src.data import (
@@ -110,6 +111,9 @@ score, breakdown = S.composite(components)
 fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
 rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
 
+headlines, news_err = load_news()
+headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
+
 tabs = st.tabs(["Overview", "Indices", "Volatility & Macro", "Sector Rotation",
                 "News Risk", "Economic Calendar", "Earnings"])
 
@@ -130,6 +134,21 @@ with tabs[0]:
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         st.caption("100 = most bullish. Weights: Trend 25%, Momentum 20%, "
                    "Volatility 20%, Macro 15%, Sectors 20%.")
+
+    st.subheader("Market commentary")
+    ctx = {
+        "score": score, "regime": S.regime(score), "breakdown": breakdown,
+        "fear": fear, "rot": rot, "rot_detail": rot_detail,
+        "headline_meter": headline_meter,
+        "vix": vm["VIX"], "y10": vm["US 10Y Yield"], "dxy": vm["DXY (USD Index)"],
+        "snaps": snaps,
+    }
+    st.info(C.market_commentary(ctx))
+    st.markdown("**Macro in context — where each stands vs the past year:**")
+    st.markdown("- " + C.vix_commentary(vm["VIX"]))
+    st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
+    st.markdown("- " + C.yield_commentary(vm["US 10Y Yield"], vm["US 5Y Yield"]))
+
     st.subheader("Market snapshot")
     cols = st.columns(4)
     for (name, s), col in zip(snaps.items(), cols):
@@ -275,11 +294,10 @@ with tabs[3]:
 
 # ---------------- NEWS RISK ----------------
 with tabs[4]:
-    headlines, err = load_news()
-    if err:
-        st.warning(f"News feed unavailable: {err}")
+    if news_err:
+        st.warning(f"News feed unavailable: {news_err}")
     elif headlines:
-        meter, detail = risk_meter(headlines)
+        meter, detail = headline_meter, headline_detail
         c1, c2 = st.columns([1, 2])
         with c1:
             st.plotly_chart(gauge(meter, "Headline Risk"), use_container_width=True)
