@@ -559,9 +559,8 @@ with tabs[6]:
             return [f"background-color: {color}33" if color else ""] * len(row)
         st.dataframe(cdf.style.apply(highlight, axis=1),
                      use_container_width=True, hide_index=True)
-        st.caption("Source: ForexFactory weekly calendar feed (times ET). "
-                   "Rolling 7-day window — near week's end the feed may cover "
-                   "fewer than 7 days.")
+        st.caption("Source: MarketWatch economic calendar (times ET). "
+                   "Impact approximated from event category.")
     else:
         st.info("No events found.")
 

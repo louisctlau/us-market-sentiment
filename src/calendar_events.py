@@ -1,67 +1,99 @@
-"""US economic calendar — rolling 7-day window (FOMC, CPI, NFP, PCE, GDP...).
+"""US economic calendar — rolling 7-day window.
 
-Source: FairEconomy / ForexFactory free JSON feed (no API key).
-The feed covers the current calendar week, so near week's end fewer than
-7 days may be available.
+Source: MarketWatch economic calendar
+(https://www.marketwatch.com/economy-politics/calendar),
+parsed from the page's embedded JSON (no API key).
+MarketWatch does not publish impact ratings or forecasts, so impact is
+approximated from the event category and forecast/previous show as "—".
 """
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-FEED_URLS = [
-    "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-    "https://nfs.faireconomy.media/ff_calendar_nextweek.json",  # 404 when unpublished; skipped
-]
+CALENDAR_URL = "https://www.marketwatch.com/economy-politics/calendar"
 ET = ZoneInfo("America/Toronto")
+UA = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/126.0 Safari/537.36"
+}
+
+HIGH_CATS = {"central banks", "employment", "inflation", "gdp growth",
+             "interest rate"}
+MEDIUM_CATS = {"labour market", "economic activity", "housing market",
+               "consumer sentiment", "confidence index", "foreign trade",
+               "balance", "government", "bonds", "credit"}
 
 
-def _fetch_feed(url: str) -> list:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read())
+def _fetch_days() -> list[dict]:
+    req = urllib.request.Request(CALENDAR_URL, headers=UA)
+    with urllib.request.urlopen(req, timeout=25) as resp:
+        html = resp.read().decode("utf-8", errors="replace")
+    m = re.search(
+        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+        html, re.S)
+    if not m:
+        raise RuntimeError("MarketWatch calendar data not found in page.")
+    try:
+        return json.loads(m.group(1))["props"]["pageProps"]["calendarData"]
+    except (KeyError, TypeError, ValueError):
+        raise RuntimeError("MarketWatch calendar data changed shape.")
 
 
-def fetch_calendar(country: str = "USD", days: int = 7) -> list[dict]:
-    events = []
-    for url in FEED_URLS:
-        try:
-            events.extend(_fetch_feed(url))
-        except Exception:
-            continue  # next-week file isn't always published; this week suffices
-    if not events:
-        raise RuntimeError("Calendar feeds unreachable (this week + next week).")
+def _parse_dt(e: dict) -> datetime | None:
+    gmt = (e.get("dateGMT") or "").strip()
+    try:
+        if "T" in gmt:
+            dt = datetime.fromisoformat(gmt.replace("Z", "+00:00"))
+        else:
+            d = datetime.strptime(gmt, "%Y-%m-%d").date()
+            dt = datetime(d.year, d.month, d.day, 12, 0,
+                          tzinfo=ET).astimezone(timezone.utc)
+    except Exception:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _impact(cats: list) -> str:
+    s = {str(c).lower() for c in cats or []}
+    if s & HIGH_CATS:
+        return "High"
+    if s & MEDIUM_CATS:
+        return "Medium"
+    return "Low"
+
+
+def fetch_calendar(days: int = 7) -> list[dict]:
     now = datetime.now(timezone.utc)
     end = now + timedelta(days=days)
     out = []
     seen = set()
-    for e in events:
-        if e.get("country") != country:
-            continue
-        try:
-            dt = datetime.fromisoformat(e["date"])
-        except Exception:
-            continue
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        if not (now <= dt <= end):
-            continue
-        key = (dt.isoformat(), e.get("title"))
-        if key in seen:
-            continue
-        seen.add(key)
-        local = dt.astimezone(ET)
-        out.append({
-            "datetime_utc": dt,
-            "date": local.strftime("%a %b %d"),
-            "time_et": local.strftime("%H:%M"),
-            "event": e.get("title", ""),
-            "impact": e.get("impact") or "Low",
-            "forecast": e.get("forecast") or "—",
-            "previous": e.get("previous") or "—",
-            "upcoming": True,
-        })
+    for day in _fetch_days():
+        for e in day.get("events") or []:
+            dt = _parse_dt(e)
+            if dt is None or not (now <= dt <= end):
+                continue
+            title = (e.get("report") or e.get("description") or "").strip()
+            key = (dt.isoformat(), title)
+            if key in seen:
+                continue
+            seen.add(key)
+            local = dt.astimezone(ET)
+            out.append({
+                "datetime_utc": dt,
+                "date": local.strftime("%a %b %d"),
+                "time_et": (e.get("time") or "").strip() or "TBA",
+                "event": title,
+                "impact": _impact(e.get("categoryIds")),
+                "forecast": "—",
+                "previous": "—",
+                "upcoming": True,
+            })
     out.sort(key=lambda x: x["datetime_utc"])
     return out
