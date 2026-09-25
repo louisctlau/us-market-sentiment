@@ -4,14 +4,17 @@ Primary source: CBOE delayed-quotes API (public, no key), which publishes
 per-contract gamma and open interest. Fallback: yfinance option chains with
 Black-Scholes gamma estimated from each contract's implied vol.
 
-Dealer positioning assumption (standard): dealers are long calls / short
+Dealer positioning assumption (standard): dealers are short calls / long
 puts, so
 
-    GEX(strike) = (call_OI * call_gamma - put_OI * put_gamma) * 100 * spot
+    GEX(strike) = (put_OI * put_gamma - call_OI * call_gamma) * 100 * spot
 
 in dollars of delta-hedge flow per 1-point move (displayed in $M).
 Positive GEX = dealers long gamma (dampens moves, pinning);
 negative GEX = dealers short gamma (amplifies moves).
+
+The bar charts plot the sign-flipped series, so call gamma points up and
+put gamma points down; the headline Net GEX keeps the convention above.
 
 yfinance fallback approximations (documented, not hidden): risk-free rate
 fixed at 4%, no dividend yield, time to expiry clamped at >= 6 hours.
@@ -77,7 +80,7 @@ def _from_cboe(etf: str, n_expiries: int) -> dict:
         if oi <= 0 or gamma <= 0:
             continue
         expiry, side, strike = _parse_cboe_symbol(o["option"])
-        sign = 1.0 if side == "calls" else -1.0
+        sign = 1.0 if side == "puts" else -1.0
         rows.append({"strike": strike, "expiry": expiry, "side": side,
                      "gex_m": sign * gamma * oi * 100.0 * spot / 1e6})
     if not rows:
@@ -106,7 +109,7 @@ def _from_yfinance(etf: str, n_expiries: int) -> dict:
             chain = t.option_chain(exp)
         except Exception:
             continue
-        for side, sign in (("calls", 1.0), ("puts", -1.0)):
+        for side, sign in (("calls", -1.0), ("puts", 1.0)):
             df = getattr(chain, side)
             if df.empty:
                 continue
@@ -139,7 +142,7 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
         except Exception as e:
             errors.append(f"{fn.__name__}: {e}")
     else:
-        raise RuntimeError("[gex-v3] " + "; ".join(errors))
+        raise RuntimeError("[gex-v4] " + "; ".join(errors))
 
     contracts = src["contracts"]
     piv = contracts.pivot_table(index="strike", columns="side", values="gex_m",
@@ -147,20 +150,20 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
     for c in ("calls", "puts"):
         if c not in piv.columns:
             piv[c] = 0.0
-    piv["net_gex"] = piv["calls"] + piv["puts"]  # puts already negative
+    piv["net_gex"] = piv["puts"] + piv["calls"]  # calls already negative
     piv = piv.sort_index()
 
     spot = src["spot"]
     total_net = float(piv["net_gex"].sum())
     above = piv[piv.index >= spot]
     below = piv[piv.index <= spot]
-    call_wall = (float(above["calls"].idxmax())
-                 if not above.empty and (above["calls"] > 0).any() else None)
-    put_wall = (float(below["puts"].idxmin())
-                if not below.empty and (below["puts"] < 0).any() else None)
+    call_wall = (float(above["calls"].idxmin())
+                 if not above.empty and (above["calls"] < 0).any() else None)
+    put_wall = (float(below["puts"].idxmax())
+                if not below.empty and (below["puts"] > 0).any() else None)
     cumsum = piv["net_gex"].cumsum()
-    neg = cumsum < 0
-    flip = neg & (~neg.shift(-1, fill_value=True))
+    pos = cumsum > 0
+    flip = pos & (~pos.shift(-1, fill_value=True))
     hits = flip[flip].index
     zero_gamma = float(hits[0]) if len(hits) else None
 
@@ -171,13 +174,15 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
 
 
 def gex_chart(g: dict, title: str) -> go.Figure:
-    """Net GEX by strike ($M per 1-pt move) with spot, walls, zero-gamma."""
+    """GEX by strike ($M per 1-pt move), sign-flipped so call gamma points
+    up and put gamma points down. Spot, walls, zero-gamma overlaid."""
     df = g["strikes"]
     spot = g["spot"]
     df = df[(df["strike"] >= spot * 0.92) & (df["strike"] <= spot * 1.08)]
-    colors = ["#2ecc71" if x >= 0 else "#e74c3c" for x in df["net_gex"]]
-    fig = go.Figure(go.Bar(x=df["strike"], y=df["net_gex"], marker_color=colors,
-                           name="Net GEX ($M/pt)"))
+    y = -df["net_gex"]  # flipped: positive = call gamma, negative = put gamma
+    colors = ["#2ecc71" if v >= 0 else "#e74c3c" for v in y]
+    fig = go.Figure(go.Bar(x=df["strike"], y=y, marker_color=colors,
+                           name="GEX by strike ($M/pt)"))
     fig.add_vline(x=spot, line_color="#1f77b4", line_width=2,
                   annotation_text=f"Spot {spot:.0f}")
     if g["put_wall"]:
@@ -190,7 +195,8 @@ def gex_chart(g: dict, title: str) -> go.Figure:
         fig.add_vline(x=g["zero_gamma"], line_color="#f1c40f", line_dash="dot",
                       annotation_text=f"0γ {g['zero_gamma']:.0f}")
     fig.update_layout(title=title, height=380, margin=dict(t=40, b=10),
-                      xaxis_title="Strike", yaxis_title="Net GEX ($M per 1-pt move)",
+                      xaxis_title="Strike",
+                      yaxis_title="GEX by strike ($M per 1-pt move, flipped)",
                       bargap=0.1)
     return fig
 
@@ -201,6 +207,6 @@ def gex_read(g: dict) -> str:
     tone = ("dealers long gamma — moves tend to be dampened/pinned"
             if t > 0 else
             "dealers short gamma — moves tend to be amplified")
-    zg = (f" Zero-gamma at {g['zero_gamma']:.0f}: below it, dealers are "
-          f"short gamma and moves can accelerate." if g["zero_gamma"] else "")
+    zg = (f" Zero-gamma at {g['zero_gamma']:.0f}: above it, volatility can "
+          f"expand fast." if g["zero_gamma"] else "")
     return f"Net GEX ${t:+.0f}M/pt — {tone}.{zg}"
