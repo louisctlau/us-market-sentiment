@@ -1,19 +1,27 @@
 """Market news headlines + keyword-based headline-risk classification.
 
-Source: Google News RSS (free, no API key).
+Sources: Google News RSS + CNBC RSS (free, no API key).
 """
 from __future__ import annotations
 
 import re
 import urllib.request
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from zoneinfo import ZoneInfo
+
+ET_TZ = ZoneInfo("America/Toronto")
 
 RSS_URL = (
     "https://news.google.com/rss/search"
     "?q=stock%20market%20S%26P%20500%20OR%20Nasdaq%20OR%20Wall%20Street"
     "&hl=en-US&gl=US&ceid=US%3Aen"
 )
+CNBC_FEEDS = [
+    "https://www.cnbc.com/id/100003114/device/rss/rss.html",  # US Top News
+    "https://www.cnbc.com/id/10000664/device/rss/rss.html",   # Finance
+]
 
 HIGH_RISK = [
     "recession", "crash", "plunge", "collapse", "emergency", "war", "missile",
@@ -63,25 +71,68 @@ def _clean(title: str) -> str:
     return re.sub(r"\s+-\s+[^-]+$", "", title).strip()
 
 
-def fetch_headlines(limit: int = 30) -> list[dict]:
-    req = urllib.request.Request(RSS_URL, headers={"User-Agent": "Mozilla/5.0"})
+def _fetch_rss(url: str, default_source: str = "") -> list[dict]:
+    """Raw items from one RSS feed: title, source, url, parsed dt, raw pubDate."""
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=20) as resp:
         root = ET.fromstring(resp.read())
-    items = root.find("channel").findall("item")[:limit]
+    channel = root.find("channel")
+    if channel is None:
+        return []
     out = []
-    for it in items:
+    for it in channel.findall("item"):
         title = _clean(it.findtext("title") or "")
+        if not title:
+            continue
         src = it.find("source")
+        source = src.text if src is not None and src.text else default_source
+        raw = it.findtext("pubDate") or ""
         try:
-            pub = parsedate_to_datetime(it.findtext("pubDate")).strftime("%b %d, %H:%M ET")
+            dt = parsedate_to_datetime(raw)
         except Exception:
-            pub = it.findtext("pubDate") or ""
-        risk, reason = classify_risk(title)
+            dt = None
+        out.append({"title": title, "source": source, "url": it.findtext("link") or "",
+                    "dt": dt, "raw": raw})
+    return out
+
+
+def _fmt_pub(dt: datetime | None, raw: str) -> str:
+    if dt is None:
+        return raw
+    try:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ET_TZ).strftime("%b %d, %H:%M ET")
+    except Exception:
+        return raw
+
+
+def fetch_headlines(limit: int = 30) -> list[dict]:
+    items = _fetch_rss(RSS_URL)
+    for feed in CNBC_FEEDS:
+        try:
+            items.extend(_fetch_rss(feed, default_source="CNBC"))
+        except Exception:
+            continue  # one dead feed shouldn't kill the tab
+    # Dedupe by normalized title (Google News often already includes CNBC).
+    seen: dict[str, dict] = {}
+    for it in items:
+        key = re.sub(r"\W+", "", it["title"].lower())
+        if key not in seen:
+            seen[key] = it
+    deduped = list(seen.values())
+    deduped.sort(
+        key=lambda h: h["dt"] if h["dt"] is not None else datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    out = []
+    for it in deduped[:limit]:
+        risk, reason = classify_risk(it["title"])
         out.append({
-            "title": title,
-            "source": src.text if src is not None else "",
-            "published": pub,
-            "url": it.findtext("link") or "",
+            "title": it["title"],
+            "source": it["source"],
+            "published": _fmt_pub(it["dt"], it["raw"]),
+            "url": it["url"],
             "risk": risk,
             "risk_reason": reason,
         })

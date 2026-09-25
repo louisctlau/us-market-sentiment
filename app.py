@@ -444,7 +444,7 @@ with tabs[5]:
             age_str = "just now" if age_min < 1 else f"{age_min} min ago"
             st.caption(f"Headlines fetched "
                        f"{news_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET}"
-                       f" ({age_str})")
+                       f" ({age_str}) · Sources: Google News, CNBC")
         meter, detail = headline_meter, headline_detail
         c1, c2 = st.columns([1, 2])
         with c1:
@@ -575,7 +575,7 @@ with tabs[9]:
                    "investment advice.")
 
 st.divider()
-st.caption("Data: Yahoo Finance (prices), FRED API (economy), Google News RSS (headlines), ForexFactory "
+st.caption("Data: Yahoo Finance (prices), FRED API (economy), Google News + CNBC RSS (headlines), ForexFactory "
            "(calendar), Nasdaq (earnings), CME ZQ futures + FRED (Fed Watch). "
            "Educational — not investment advice. "
            "Refreshes every 15 min.")
