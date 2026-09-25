@@ -456,8 +456,8 @@ with tabs[5]:
             for h in headlines:
                 badge = {"high": "🔴", "medium": "🟡", "low": "⚪",
                          "bullish": "🟢"}[h["risk"]]
-                st.markdown(f"{badge} **[{h['source']}]** {h['title']}  "
-                            f"*{h['published']}* — {h['risk_reason']}")
+                st.markdown(f"`{h['published']}` {badge} **[{h['source']}]** "
+                            f"{h['title']} — {h['risk_reason']}")
     else:
         st.info("No headlines right now.")
 
