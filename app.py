@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from src import commentary as C
 from src import fedwatch as F
+from src import fred as FR
 from src import gex as G
 from src import sentiment as S
 from src.calendar_events import fetch_calendar
@@ -85,6 +86,13 @@ def load_earnings():
         return [], str(e)
 
 
+@st.cache_data(ttl=21600)
+def load_economy():
+    # Failures raise instead of being returned (see load_gex note above).
+    return {sid: FR.get_series(sid, observation_start="2020-01-01")
+            for sid in FR.ECON_SERIES}
+
+
 def gauge(value: float, title: str, color_ranges=True, invert=False) -> go.Figure:
     steps = [{"range": [0, 25], "color": "#e74c3c"},
              {"range": [25, 45], "color": "#f39c12"},
@@ -144,8 +152,9 @@ rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
 headlines, news_err = load_news()
 headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
 
-tabs = st.tabs(["Overview", "Indices", "Volatility & Macro", "Sector Rotation",
-                "News Risk", "Economic Calendar", "Earnings", "GEX", "Fed Watch"])
+tabs = st.tabs(["Overview", "Indices", "Volatility & Macro", "Economy",
+                "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
+                "GEX", "Fed Watch"])
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
@@ -299,8 +308,92 @@ with tabs[2]:
         st.write(f"**Spread {last_spread:+.2f}pp** — " +
                  ("inverted ⚠️" if last_spread < 0 else "normal"))
 
-# ---------------- SECTOR ROTATION ----------------
+# ---------------- ECONOMY (FRED API) ----------------
 with tabs[3]:
+    st.subheader("US Economy — FRED")
+    st.caption("Official macro series via the FRED API "
+               "(Federal Reserve Bank of St. Louis).")
+    try:
+        econ = load_economy()
+        econ_err = None
+    except FR.FredNoKey:
+        econ, econ_err = None, "nokey"
+    except Exception as e:
+        econ, econ_err = None, str(e)
+    if econ_err == "nokey":
+        st.info("The Economy tab needs a free FRED API key — get one at "
+                "https://fred.stlouisfed.org/docs/api/api_key.html and add it as "
+                "the `FRED_API_KEY` secret (Streamlit Cloud: app Settings → Secrets; "
+                "local runs: `.streamlit/secrets.toml`). Then press ↻ Refresh.")
+    elif econ_err:
+        st.warning(f"FRED data unavailable: {econ_err}")
+    else:
+        def econ_display(sid: str, df: pd.DataFrame) -> pd.Series:
+            v = df["value"]
+            if sid in ("CPIAUCSL", "PCEPI"):
+                return v.pct_change(12) * 100
+            if sid == "ICSA":
+                return v.rolling(4).mean()
+            if sid == "PAYEMS":
+                return v.diff()
+            if sid == "GDP":
+                return (v / v.shift(1)) ** 4 * 100 - 100
+            return v
+
+        fmts = {"FEDFUNDS": "{:.2f}%", "UNRATE": "{:.1f}%",
+                "CPIAUCSL": "{:+.1f}%", "PCEPI": "{:+.1f}%",
+                "ICSA": "{:,.0f}", "PAYEMS": "{:+,.0f}k",
+                "GDP": "{:+.1f}%", "DGS2": "{:.2f}%", "DGS10": "{:.2f}%"}
+        heads, asofs = {}, {}
+        for sid in FR.ECON_SERIES:
+            heads[sid], asofs[sid] = FR.headline_value(sid, econ[sid])
+        cards = list(FR.ECON_SERIES)
+        for row in range(3):
+            cols = st.columns(3)
+            for col, sid in zip(cols, cards[row * 3:(row + 1) * 3]):
+                val = heads[sid]
+                col.metric(FR.ECON_SERIES[sid],
+                           fmts[sid].format(val) if val is not None else "n/a",
+                           help=f"As of {asofs[sid]}")
+
+        unrate = econ["UNRATE"]["value"]
+        unrate_yoy = unrate.iloc[-1] - unrate.iloc[-13] if len(unrate) > 13 else None
+        pay3m = econ["PAYEMS"]["value"].diff().tail(3).mean()
+        labor_bits = []
+        if unrate_yoy is not None:
+            labor_bits.append(
+                f"unemployment {unrate.iloc[-1]:.1f}% "
+                f"({'up' if unrate_yoy > 0 else 'down'} {abs(unrate_yoy):.1f}pp "
+                "vs a year ago)")
+        if not pd.isna(pay3m):
+            labor_bits.append(f"payrolls averaging {pay3m:+,.0f}k/month over 3 months")
+        if labor_bits:
+            st.info("**Labor read:** " + "; ".join(labor_bits) + ".")
+
+        st.subheader("Trends — 5 years")
+        chart_ids = ["CPIAUCSL", "PCEPI", "UNRATE", "FEDFUNDS",
+                     "ICSA", "PAYEMS", "GDP"]
+        for i in range(0, len(chart_ids), 2):
+            cols = st.columns(2)
+            for col, sid in zip(cols, chart_ids[i:i + 2]):
+                s = econ_display(sid, econ[sid]).dropna().tail(260)
+                fig = go.Figure(go.Scatter(x=s.index, y=s, line=dict(width=2)))
+                fig.update_layout(title=f"{FR.ECON_SERIES[sid]} — 5 years",
+                                  height=300, margin=dict(t=40, b=10))
+                col.plotly_chart(fig, use_container_width=True)
+        y2 = econ_display("DGS2", econ["DGS2"]).dropna().tail(260)
+        y10 = econ_display("DGS10", econ["DGS10"]).dropna().tail(260)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=y2.index, y=y2, name="2Y"))
+        fig.add_trace(go.Scatter(x=y10.index, y=y10, name="10Y"))
+        fig.update_layout(title="Treasury yields (FRED) — 5 years",
+                          height=300, margin=dict(t=40, b=10))
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption("Series IDs: " + ", ".join(FR.ECON_SERIES) +
+                   ". Source: FRED API, Federal Reserve Bank of St. Louis.")
+
+# ---------------- SECTOR ROTATION ----------------
+with tabs[4]:
     perf = []
     for name, df in sec.items():
         if df.empty:
@@ -334,7 +427,7 @@ with tabs[3]:
                  use_container_width=True, hide_index=True)
 
 # ---------------- NEWS RISK ----------------
-with tabs[4]:
+with tabs[5]:
     if news_err:
         st.warning(f"News feed unavailable: {news_err}")
     elif headlines:
@@ -355,7 +448,7 @@ with tabs[4]:
         st.info("No headlines right now.")
 
 # ---------------- ECONOMIC CALENDAR ----------------
-with tabs[5]:
+with tabs[6]:
     events, err = load_calendar()
     if err:
         st.warning(f"Calendar feed unavailable: {err}")
@@ -376,7 +469,7 @@ with tabs[5]:
         st.info("No events found.")
 
 # ---------------- EARNINGS ----------------
-with tabs[6]:
+with tabs[7]:
     earnings, err = load_earnings()
     if err:
         st.warning(f"Earnings feed unavailable: {err}")
@@ -392,7 +485,7 @@ with tabs[6]:
         st.info("No notable earnings in the next 7 days.")
 
 # ---------------- GEX ----------------
-with tabs[7]:
+with tabs[8]:
     st.subheader("Gamma exposure (GEX)")
     st.caption("Dealer gamma positioning from listed option chains — SPY/QQQ/IWM "
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
@@ -424,7 +517,7 @@ with tabs[7]:
                "GEX = (put OI × put γ − call OI × call γ) × 100 × spot. "
                "Assumes dealers short calls / long puts.")
 
-with tabs[8]:
+with tabs[9]:
     st.subheader("Fed Watch — rate probabilities")
     st.caption("Market-implied odds of Fed moves at upcoming FOMC meetings, "
                "stripped from 30-day Fed Funds futures (CME ZQ).")
@@ -468,7 +561,7 @@ with tabs[8]:
                    "investment advice.")
 
 st.divider()
-st.caption("Data: Yahoo Finance (prices), Google News RSS (headlines), ForexFactory "
+st.caption("Data: Yahoo Finance (prices), FRED API (economy), Google News RSS (headlines), ForexFactory "
            "(calendar), Nasdaq (earnings), CME ZQ futures + FRED (Fed Watch). "
            "Educational — not investment advice. "
            "Refreshes every 15 min.")
