@@ -54,9 +54,9 @@ def load_data():
 def load_news():
     try:
         hs = fetch_headlines(30)
-        return hs, None
+        return hs, None, datetime.now(timezone.utc)
     except Exception as e:
-        return [], str(e)
+        return [], str(e), None
 
 
 @st.cache_data(ttl=3600)
@@ -157,7 +157,7 @@ score, breakdown = S.composite(components)
 fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
 rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
 
-headlines, news_err = load_news()
+headlines, news_err, news_ts = load_news()
 headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
 
 tabs = st.tabs(["Overview", "Indices", "Volatility & Macro", "Economy",
@@ -439,6 +439,12 @@ with tabs[5]:
     if news_err:
         st.warning(f"News feed unavailable: {news_err}")
     elif headlines:
+        if news_ts is not None:
+            age_min = int((datetime.now(timezone.utc) - news_ts).total_seconds() // 60)
+            age_str = "just now" if age_min < 1 else f"{age_min} min ago"
+            st.caption(f"Headlines fetched "
+                       f"{news_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET}"
+                       f" ({age_str})")
         meter, detail = headline_meter, headline_detail
         c1, c2 = st.columns([1, 2])
         with c1:
