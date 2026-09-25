@@ -113,16 +113,18 @@ def load_yield_curve():
     return out
 
 
-def gauge(value: float, title: str, color_ranges=True, invert=False) -> go.Figure:
-    steps = [{"range": [0, 25], "color": "#e74c3c"},
-             {"range": [25, 45], "color": "#f39c12"},
-             {"range": [45, 70], "color": "#f1c40f"},
-             {"range": [70, 100], "color": "#2ecc71"}]
+def gauge(value: float, title: str, color_ranges=True, invert=False,
+          steps: list | None = None) -> go.Figure:
+    default_steps = [{"range": [0, 25], "color": "#e74c3c"},
+                     {"range": [25, 45], "color": "#f39c12"},
+                     {"range": [45, 70], "color": "#f1c40f"},
+                     {"range": [70, 100], "color": "#2ecc71"}]
     if invert:  # high = bad (fear, risk-off)
-        steps = [{"range": [0, 25], "color": "#2ecc71"},
-                 {"range": [25, 45], "color": "#f1c40f"},
-                 {"range": [45, 70], "color": "#f39c12"},
-                 {"range": [70, 100], "color": "#e74c3c"}]
+        default_steps = [{"range": [0, 25], "color": "#2ecc71"},
+                         {"range": [25, 45], "color": "#f1c40f"},
+                         {"range": [45, 70], "color": "#f39c12"},
+                         {"range": [70, 100], "color": "#e74c3c"}]
+    steps = default_steps if steps is None else steps
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=value, title={"text": title},
         number={"suffix": ""},
@@ -493,6 +495,15 @@ with tabs[4]:
                  use_container_width=True, hide_index=True)
 
 # ---------------- NEWS RISK ----------------
+# Severity bands in 20-point increments; single source for gauge + legend.
+HEADLINE_RISK_BANDS = [
+    ("0–20 · Calm", 0, 20, "#2ecc71"),
+    ("20–40 · Low", 20, 40, "#f1c40f"),
+    ("40–60 · Elevated", 40, 60, "#f39c12"),
+    ("60–80 · High", 60, 80, "#e67e22"),
+    ("80–100 · Severe", 80, 100, "#e74c3c"),
+]
+
 with tabs[5]:
     if news_err:
         st.warning(f"News feed unavailable: {news_err}")
@@ -506,7 +517,20 @@ with tabs[5]:
         meter, detail = headline_meter, headline_detail
         c1, c2 = st.columns([1, 2])
         with c1:
-            st.plotly_chart(gauge(meter, "Headline Risk"), use_container_width=True)
+            st.plotly_chart(gauge(
+                meter, "Headline Risk",
+                steps=[{"range": [lo, hi], "color": c}
+                       for _lbl, lo, hi, c in HEADLINE_RISK_BANDS]),
+                use_container_width=True)
+            segs = "".join(
+                f"<div style='flex:1;background:{c};"
+                f"color:{'#fff' if i >= 2 else '#333'};text-align:center;"
+                f"font-size:10px;padding:3px 1px;line-height:1.25;'>{lbl}</div>"
+                for i, (lbl, _lo, _hi, c) in enumerate(HEADLINE_RISK_BANDS))
+            st.markdown(
+                "<div style='display:flex;border-radius:4px;overflow:hidden;'>"
+                f"{segs}</div>", unsafe_allow_html=True)
+            st.caption("Severity scale: 0 = calm, 100 = maximum headline risk.")
             st.caption(detail)
             st.caption("Keyword-based: high-risk words (crash, tariff, war…), "
                        "medium (Fed, CPI, inflation…), bullish words reduce risk.")
