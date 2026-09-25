@@ -109,6 +109,22 @@ ECON_SERIES = {
 }
 
 
+# US Treasury par yield curve: maturity label -> (FRED series id, years)
+YIELD_CURVE_SERIES = {
+    "1M": ("DGS1MO", 1 / 12),
+    "3M": ("DGS3MO", 3 / 12),
+    "6M": ("DGS6MO", 6 / 12),
+    "1Y": ("DGS1", 1.0),
+    "2Y": ("DGS2", 2.0),
+    "3Y": ("DGS3", 3.0),
+    "5Y": ("DGS5", 5.0),
+    "7Y": ("DGS7", 7.0),
+    "10Y": ("DGS10", 10.0),
+    "20Y": ("DGS20", 20.0),
+    "30Y": ("DGS30", 30.0),
+}
+
+
 def headline_value(series_id: str, df: pd.DataFrame) -> tuple[float, str] | tuple[None, str]:
     """Latest headline number and its as-of date for the Economy tab."""
     if df.empty:

@@ -101,6 +101,18 @@ def load_economy():
             for sid in FR.ECON_SERIES}
 
 
+@st.cache_data(ttl=3600)
+def load_yield_curve():
+    # One dead series shouldn't kill the curve — skip failures.
+    out = {}
+    for label, (sid, _yrs) in FR.YIELD_CURVE_SERIES.items():
+        try:
+            out[label] = FR.get_series(sid, observation_start="2024-01-01")
+        except Exception:
+            continue
+    return out
+
+
 def gauge(value: float, title: str, color_ranges=True, invert=False) -> go.Figure:
     steps = [{"range": [0, 25], "color": "#e74c3c"},
              {"range": [25, 45], "color": "#f39c12"},
@@ -397,8 +409,54 @@ with tabs[3]:
         fig.update_layout(title="Treasury yields (FRED) — 5 years",
                           height=300, margin=dict(t=40, b=10))
         st.plotly_chart(fig, use_container_width=True)
-        st.caption("Series IDs: " + ", ".join(FR.ECON_SERIES) +
-                   ". Source: FRED API, Federal Reserve Bank of St. Louis.")
+
+        st.subheader("US Treasury yield curve")
+        yc = load_yield_curve()
+        if yc:
+            def curve_on(target):
+                pts = []
+                for label, (_sid, yrs) in FR.YIELD_CURVE_SERIES.items():
+                    if label not in yc:
+                        continue
+                    s = yc[label]["value"]
+                    s = s[s.index <= target]
+                    if not s.empty:
+                        pts.append((yrs, label, float(s.iloc[-1])))
+                return pts
+
+            latest = max(df.index[-1] for df in yc.values())
+            curves = [
+                (curve_on(latest), f"Now ({latest:%b %d, %Y})", None),
+                (curve_on(latest - pd.Timedelta(days=30)), "1 month ago", "dash"),
+                (curve_on(latest - pd.Timedelta(days=365)), "1 year ago", "dot"),
+            ]
+            fig = go.Figure()
+            for pts, name, dash in curves:
+                if not pts:
+                    continue
+                fig.add_trace(go.Scatter(
+                    x=[p[0] for p in pts], y=[p[2] for p in pts],
+                    mode="lines+markers", name=name,
+                    line=dict(dash=dash) if dash else {},
+                    text=[p[1] for p in pts],
+                    hovertemplate="%{text}: %{y:.2f}%<extra></extra>"))
+            if curves[0][0]:
+                fig.update_xaxes(
+                    tickvals=[p[0] for p in curves[0][0]],
+                    ticktext=[p[1] for p in curves[0][0]])
+            fig.update_layout(height=380, margin=dict(t=40, b=10),
+                              xaxis_title="Maturity", yaxis_title="Yield (%)",
+                              yaxis_ticksuffix="%")
+            st.plotly_chart(fig, use_container_width=True)
+            d = {p[1]: p[2] for p in curves[0][0]}
+            if "10Y" in d and "2Y" in d:
+                spr = d["10Y"] - d["2Y"]
+                st.caption(f"10Y–2Y spread {spr:+.2f}pp — " +
+                           ("inverted ⚠️" if spr < 0 else "normal"))
+        st.caption("Series IDs: " + ", ".join(
+            dict.fromkeys(list(FR.ECON_SERIES) +
+                          [sid for sid, _yrs in FR.YIELD_CURVE_SERIES.values()])) +
+            ". Source: FRED API, Federal Reserve Bank of St. Louis.")
 
 # ---------------- SECTOR ROTATION ----------------
 with tabs[4]:
