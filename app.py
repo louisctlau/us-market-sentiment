@@ -32,6 +32,14 @@ st.set_page_config(page_title="US Market Sentiment", layout="wide")
 st.title("US Market Sentiment Dashboard")
 st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals, sectors, headlines, calendar")
 
+# Auto-reload the whole page every 15 minutes so a dashboard left open stays
+# fresh. (st_autorefresh proved unreliable here, so this uses a plain JS timer.)
+AUTO_REFRESH_MS = 15 * 60 * 1000
+st.markdown(
+    f"<script>setTimeout(function(){{window.location.reload();}}, {AUTO_REFRESH_MS});</script>",
+    unsafe_allow_html=True,
+)
+
 
 @st.cache_data(ttl=900)
 def load_data():
@@ -130,7 +138,7 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
 idx, vm, sec, xa, data_ts = load_data()
 col_ts, col_btn = st.columns([5, 1])
 with col_ts:
-    st.caption(f"Data refreshed {data_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET}")
+    st.caption(f"Data refreshed {data_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} · auto-refreshes every 15 min")
 with col_btn:
     if st.button("↻ Refresh", use_container_width=True):
         st.cache_data.clear()
