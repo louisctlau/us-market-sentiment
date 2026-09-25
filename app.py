@@ -587,7 +587,7 @@ with tabs[8]:
     st.caption("Dealer gamma positioning from listed option chains — SPY/QQQ/IWM "
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
                "dealers long gamma (dampens moves); negative = short gamma "
-               "(amplifies moves). Nearest 3 expiries, prior-day open interest. [gex-v2]")
+               "(amplifies moves). Nearest 3 expiries, prior-day open interest. [gex-v3]")
     for name, etf in [("S&P 500", "SPY"), ("Nasdaq 100", "QQQ"),
                       ("Russell 2000", "IWM")]:
         try:
@@ -611,8 +611,8 @@ with tabs[8]:
         st.info(f"**Read:** {G.gex_read(g)}")
     st.caption("Method: per-contract gamma × open interest from CBOE delayed quotes "
                "(yfinance chains + Black-Scholes gamma as fallback). "
-               "GEX = (put OI × put γ − call OI × call γ) × 100 × spot. "
-               "Assumes dealers short calls / long puts.")
+               "GEX = (call OI × call γ − put OI × put γ) × 100 × spot. "
+               "Assumes dealers long calls / short puts.")
 
 with tabs[9]:
     st.subheader("Fed Watch — rate probabilities")

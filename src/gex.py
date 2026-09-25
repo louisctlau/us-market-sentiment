@@ -4,10 +4,10 @@ Primary source: CBOE delayed-quotes API (public, no key), which publishes
 per-contract gamma and open interest. Fallback: yfinance option chains with
 Black-Scholes gamma estimated from each contract's implied vol.
 
-Dealer positioning assumption (standard): dealers are short calls / long
+Dealer positioning assumption (standard): dealers are long calls / short
 puts, so
 
-    GEX(strike) = (put_OI * put_gamma - call_OI * call_gamma) * 100 * spot
+    GEX(strike) = (call_OI * call_gamma - put_OI * put_gamma) * 100 * spot
 
 in dollars of delta-hedge flow per 1-point move (displayed in $M).
 Positive GEX = dealers long gamma (dampens moves, pinning);
@@ -77,7 +77,7 @@ def _from_cboe(etf: str, n_expiries: int) -> dict:
         if oi <= 0 or gamma <= 0:
             continue
         expiry, side, strike = _parse_cboe_symbol(o["option"])
-        sign = 1.0 if side == "puts" else -1.0
+        sign = 1.0 if side == "calls" else -1.0
         rows.append({"strike": strike, "expiry": expiry, "side": side,
                      "gex_m": sign * gamma * oi * 100.0 * spot / 1e6})
     if not rows:
@@ -106,7 +106,7 @@ def _from_yfinance(etf: str, n_expiries: int) -> dict:
             chain = t.option_chain(exp)
         except Exception:
             continue
-        for side, sign in (("calls", -1.0), ("puts", 1.0)):
+        for side, sign in (("calls", 1.0), ("puts", -1.0)):
             df = getattr(chain, side)
             if df.empty:
                 continue
@@ -139,7 +139,7 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
         except Exception as e:
             errors.append(f"{fn.__name__}: {e}")
     else:
-        raise RuntimeError("[gex-v2] " + "; ".join(errors))
+        raise RuntimeError("[gex-v3] " + "; ".join(errors))
 
     contracts = src["contracts"]
     piv = contracts.pivot_table(index="strike", columns="side", values="gex_m",
@@ -147,20 +147,20 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
     for c in ("calls", "puts"):
         if c not in piv.columns:
             piv[c] = 0.0
-    piv["net_gex"] = piv["puts"] + piv["calls"]  # calls already negative
+    piv["net_gex"] = piv["calls"] + piv["puts"]  # puts already negative
     piv = piv.sort_index()
 
     spot = src["spot"]
     total_net = float(piv["net_gex"].sum())
     above = piv[piv.index >= spot]
     below = piv[piv.index <= spot]
-    call_wall = (float(above["calls"].idxmin())
-                 if not above.empty and (above["calls"] < 0).any() else None)
-    put_wall = (float(below["puts"].idxmax())
-                if not below.empty and (below["puts"] > 0).any() else None)
+    call_wall = (float(above["calls"].idxmax())
+                 if not above.empty and (above["calls"] > 0).any() else None)
+    put_wall = (float(below["puts"].idxmin())
+                if not below.empty and (below["puts"] < 0).any() else None)
     cumsum = piv["net_gex"].cumsum()
-    pos = cumsum > 0
-    flip = pos & (~pos.shift(-1, fill_value=True))
+    neg = cumsum < 0
+    flip = neg & (~neg.shift(-1, fill_value=True))
     hits = flip[flip].index
     zero_gamma = float(hits[0]) if len(hits) else None
 
@@ -201,6 +201,6 @@ def gex_read(g: dict) -> str:
     tone = ("dealers long gamma — moves tend to be dampened/pinned"
             if t > 0 else
             "dealers short gamma — moves tend to be amplified")
-    zg = (f" Zero-gamma at {g['zero_gamma']:.0f}: above it, volatility can "
-          f"expand fast." if g["zero_gamma"] else "")
+    zg = (f" Zero-gamma at {g['zero_gamma']:.0f}: below it, dealers are "
+          f"short gamma and moves can accelerate." if g["zero_gamma"] else "")
     return f"Net GEX ${t:+.0f}M/pt — {tone}.{zg}"
