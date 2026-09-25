@@ -549,18 +549,19 @@ with tabs[6]:
     if err:
         st.warning(f"Calendar feed unavailable: {err}")
     elif events:
-        upcoming = [e for e in events if e["upcoming"]]
-        st.subheader(f"Upcoming US events ({len(upcoming)})")
+        st.subheader(f"US economic calendar — next 7 days ({len(events)})")
         rows = [{"Date": e["date"], "Time": e["time_et"], "Event": e["event"],
                  "Impact": e["impact"], "Forecast": e["forecast"],
-                 "Previous": e["previous"]} for e in upcoming]
+                 "Previous": e["previous"]} for e in events]
         cdf = pd.DataFrame(rows)
         def highlight(row):
             color = {"High": "#e74c3c", "Medium": "#f39c12"}.get(row["Impact"], "")
             return [f"background-color: {color}33" if color else ""] * len(row)
         st.dataframe(cdf.style.apply(highlight, axis=1),
                      use_container_width=True, hide_index=True)
-        st.caption("Source: ForexFactory weekly calendar feed.")
+        st.caption("Source: ForexFactory weekly calendar feed (times ET). "
+                   "Rolling 7-day window — near week's end the feed may cover "
+                   "fewer than 7 days.")
     else:
         st.info("No events found.")
 
