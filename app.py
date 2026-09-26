@@ -86,6 +86,13 @@ def load_fedwatch_history():
     return F.fedwatch_history(90)
 
 
+@st.cache_data(ttl=900)
+def load_ten_year():
+    # Optional context metric: None on failure, never raises, so the
+    # Fed Watch tab keeps working if DGS10 is unavailable.
+    return F.fetch_ten_year()
+
+
 @st.cache_data(ttl=3600)
 def load_earnings():
     try:
@@ -619,6 +626,7 @@ with tabs[9]:
     st.subheader("Fed Watch — rate probabilities")
     st.caption("Market-implied odds of Fed moves at upcoming FOMC meetings, "
                "stripped from 30-day Fed Funds futures (CME ZQ).")
+    st.markdown(f"**Last FOMC decision:** {F.last_decision_text()}")
     try:
         fw = load_fedwatch()
     except Exception as e:
@@ -626,7 +634,7 @@ with tabs[9]:
         fw = None
     if fw:
         lo, hi = fw["target_range"]
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Effective fed funds rate",
                   f"{fw['effective_rate']:.2f}%",
                   help=f"FRED DFF as of {fw['effective_date']}")
@@ -635,6 +643,11 @@ with tabs[9]:
         c3.metric("Next FOMC decision",
                   nxt["date"].strftime("%b %d"),
                   f"in {nxt['days_away']} days")
+        ten = load_ten_year()
+        c4.metric("10-year Treasury",
+                  f"{ten[0]:.2f}%" if ten else "n/a",
+                  help=(f"FRED DGS10 as of {ten[1]}" if ten
+                        else "FRED DGS10 unavailable"))
         try:
             fwh = load_fedwatch_history()
         except Exception:

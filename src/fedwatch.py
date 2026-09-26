@@ -35,10 +35,66 @@ MEETINGS = [
 ]
 
 DFF_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF"
+DGS10_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10"
 
 # Target range set 2026-09-16 (25bp hike to 3.75-4.00%). Shown for context;
 # probabilities are derived from futures, not this constant.
 TARGET_RANGE = (3.75, 4.00)
+
+# Last FOMC decision, shown as a context line on the tab.
+# Update after each meeting alongside TARGET_RANGE and MEETINGS.
+LAST_DECISION = {
+    "date": date(2026, 9, 16),
+    "move": "+25bp",
+    "vote": "unanimous",
+    "note": "first hike since Jul 2023",
+    "sep_median_dot": 4.1,  # September SEP median year-end fed funds rate
+}
+
+
+def last_decision_text() -> str:
+    """One-line summary of the last FOMC decision for the tab header."""
+    lo, hi = TARGET_RANGE
+    d = LAST_DECISION
+    return (f"{d['date'].strftime('%b %d, %Y')}: {d['move']} to "
+            f"{lo:.2f}\u2013{hi:.2f}% ({d['vote']} \u2014 {d['note']}). "
+            f"September SEP median year-end dot: {d['sep_median_dot']:.1f}%.")
+
+
+def _fetch_fred_series(url: str) -> pd.DataFrame:
+    """Full FRED series history as DataFrame with a date index (forward-fillable)."""
+    try:
+        from curl_cffi import requests as _rq
+        r = _rq.get(url, headers={"User-Agent": "Mozilla/5.0"},
+                    timeout=20, impersonate="chrome")
+        r.raise_for_status()
+        df = pd.read_csv(io.BytesIO(r.content))
+    except Exception:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            df = pd.read_csv(io.BytesIO(resp.read()))
+    date_col = df.columns[0]
+    df[date_col] = pd.to_datetime(df[date_col])
+    return df.set_index(date_col).sort_index()
+
+
+def _fetch_dff_df() -> pd.DataFrame:
+    """Full DFF history as DataFrame with a date index (forward-fillable)."""
+    return _fetch_fred_series(DFF_URL)
+
+
+def fetch_ten_year() -> tuple[float, date] | None:
+    """10-year Treasury yield from FRED DGS10 (public CSV, no API key).
+
+    Returns None on any failure so the tab degrades gracefully instead of
+    going down when DGS10 is unavailable.
+    """
+    try:
+        df = _fetch_fred_series(DGS10_URL)[["DGS10"]].dropna()
+        last = df.iloc[-1]
+        return float(last["DGS10"]), last.name.date()
+    except Exception:
+        return None
 
 BUCKET_LABELS = {  # 25bp-unit -> label
     -2: "Cut 50bp", -1: "Cut 25bp", 0: "Hold",
@@ -48,23 +104,6 @@ BUCKET_COLORS = {
     -2: "#1f77b4", -1: "#6baed6", 0: "#9e9e9e",
     1: "#fb8c00", 2: "#d62728",
 }
-
-
-def _fetch_dff_df() -> pd.DataFrame:
-    """Full DFF history as DataFrame with a date index (forward-fillable)."""
-    try:
-        from curl_cffi import requests as _rq
-        r = _rq.get(DFF_URL, headers={"User-Agent": "Mozilla/5.0"},
-                    timeout=20, impersonate="chrome")
-        r.raise_for_status()
-        df = pd.read_csv(io.BytesIO(r.content))
-    except Exception:
-        req = urllib.request.Request(DFF_URL, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            df = pd.read_csv(io.BytesIO(resp.read()))
-    date_col = df.columns[0]
-    df[date_col] = pd.to_datetime(df[date_col])
-    return df.set_index(date_col).sort_index()
 
 
 def _fetch_dff() -> tuple[float, date]:
