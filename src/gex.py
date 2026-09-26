@@ -19,8 +19,9 @@ Open interest is prior-day on both sources.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -98,7 +99,7 @@ def _from_yfinance(etf: str, n_expiries: int) -> dict:
     if hist.empty:
         raise RuntimeError(f"no price history for {etf}")
     spot = float(hist["Close"].iloc[-1])
-    today = date.today()
+    today = datetime.now(ZoneInfo("America/Toronto")).date()  # ET, not server-local
     rows = []
     for exp in expiries:
         T = max((date.fromisoformat(exp) - today).days / 365.0, MIN_T_YEARS)

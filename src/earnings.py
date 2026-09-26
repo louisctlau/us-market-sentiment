@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import requests
+
+_ET = ZoneInfo("America/Toronto")
 
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -45,7 +48,7 @@ def fetch_earnings(days: int = 7, min_mcap_b: float = 5.0) -> list[dict]:
     """
     rows: list[dict] = []
     for i in range(days):
-        d = date.today() + timedelta(days=i)
+        d = datetime.now(_ET).date() + timedelta(days=i)  # ET, not server-local
         ds = d.strftime("%Y-%m-%d")
         try:
             r = requests.get(

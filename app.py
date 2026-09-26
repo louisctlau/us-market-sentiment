@@ -32,14 +32,6 @@ st.set_page_config(page_title="US Market Sentiment", layout="wide")
 st.title("US Market Sentiment Dashboard")
 st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals, sectors, headlines, calendar")
 
-# Auto-reload the whole page every 15 minutes so a dashboard left open stays
-# fresh. (st_autorefresh proved unreliable here, so this uses a plain JS timer.)
-AUTO_REFRESH_MS = 15 * 60 * 1000
-st.markdown(
-    f"<script>setTimeout(function(){{window.location.reload();}}, {AUTO_REFRESH_MS});</script>",
-    unsafe_allow_html=True,
-)
-
 
 @st.cache_data(ttl=900)
 def load_data():
@@ -157,9 +149,14 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
 
 
 idx, vm, sec, xa, data_ts = load_data()
+failed = sorted({name for group in (idx, vm, sec, xa)
+                 for name, df in group.items() if df.empty})
+if failed:
+    st.warning(f"Data unavailable for: {', '.join(failed)} — "
+               "affected widgets show neutral values.")
 col_ts, col_btn = st.columns([5, 1])
 with col_ts:
-    st.caption(f"Data refreshed {data_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} · auto-refreshes every 15 min")
+    st.caption(f"Data refreshed {data_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} · use ↻ Refresh to reload")
 with col_btn:
     if st.button("↻ Refresh", use_container_width=True):
         st.cache_data.clear()
@@ -675,4 +672,4 @@ st.divider()
 st.caption("Data: Yahoo Finance (prices), FRED API (economy), Google News + CNBC RSS (headlines), ForexFactory "
            "(calendar), Nasdaq (earnings), CME ZQ futures + FRED (Fed Watch). "
            "Educational — not investment advice. "
-           "Refreshes every 15 min.")
+           "Data caches refresh on ↻ Refresh.")

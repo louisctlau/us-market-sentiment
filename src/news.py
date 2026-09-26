@@ -30,27 +30,36 @@ HIGH_RISK = [
     "tumbles",
 ]
 MEDIUM_RISK = [
-    "inflation", "cpi", "fed", "powell", "rate hike", "rate cut", "fomc",
-    "jobs report", "payrolls", "gdp", "deficit", "debt ceiling", "shutdown",
-    "earnings miss", "guidance cut", "lawsuit", "antitrust", "selloff",
-    "bond selloff", "yields surge",
+    "inflation", "cpi", "fed", "federal reserve", "warsh", "rate hike", "rate cut",
+    "fomc", "jobs report", "payrolls", "gdp", "deficit", "debt ceiling",
+    "shutdown", "earnings miss", "guidance cut", "lawsuit", "antitrust",
+    "selloff", "bond selloff", "yields surge",
 ]
 BULLISH = [
     "record high", "all-time high", "rally", "surge", "beats", "beat estimates",
     "raises guidance", "stimulus", "deal", "merger",
 ]
 
+# Word-boundary matching: "war" must not flag "forward"/"reward"/"software".
+def _kw_res(words: list[str]) -> list[tuple[str, "re.Pattern[str]"]]:
+    return [(w, re.compile(r"\b" + re.escape(w) + r"\b")) for w in words]
+
+
+_HIGH_RE = _kw_res(HIGH_RISK)
+_MEDIUM_RE = _kw_res(MEDIUM_RISK)
+_BULLISH_RE = _kw_res(BULLISH)
+
 
 def classify_risk(title: str) -> tuple[str, str]:
     t = title.lower()
-    for kw in HIGH_RISK:
-        if kw in t:
+    for kw, rx in _HIGH_RE:
+        if rx.search(t):
             return "high", f"keyword: '{kw}'"
-    for kw in MEDIUM_RISK:
-        if kw in t:
+    for kw, rx in _MEDIUM_RE:
+        if rx.search(t):
             return "medium", f"keyword: '{kw}'"
-    for kw in BULLISH:
-        if kw in t:
+    for kw, rx in _BULLISH_RE:
+        if rx.search(t):
             return "bullish", f"keyword: '{kw}'"
     return "low", "no risk keywords"
 

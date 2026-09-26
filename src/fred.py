@@ -54,15 +54,6 @@ def _get(endpoint: str, params: dict) -> dict:
     return payload
 
 
-def series_info(series_id: str) -> dict:
-    """Metadata for a series: title, units, frequency, last_updated, notes."""
-    payload = _get("series", {"series_id": series_id})
-    seriess = payload.get("seriess", [])
-    if not seriess:
-        raise FredError(f"FRED has no series '{series_id}'.")
-    return seriess[0]
-
-
 def get_series(
     series_id: str,
     observation_start: str | None = None,

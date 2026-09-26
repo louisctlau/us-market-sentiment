@@ -12,7 +12,6 @@ INDICES = {
 }
 VOL_MACRO = {
     "VIX": "^VIX",
-    "VIX3M": "^VIX3M",
     "DXY (USD Index)": "DX-Y.NYB",
     "US 10Y Yield": "^TNX",
     "US 5Y Yield": "^FVX",  # 5-year Treasury yield (^FVX); no free Yahoo 2Y series
@@ -30,7 +29,9 @@ SECTORS = {
     "Real Estate": "XLRE",
     "Communication": "XLC",
 }
-OFFENSIVE_SECTORS = {"Technology", "Cons. Disc.", "Communication", "Industrials", "Financials"}
+OFFENSIVE_SECTORS = {"Technology", "Cons. Disc.", "Communication", "Industrials", "Financials",
+                     # Cyclical leaners, classified explicitly (never silently defaulted):
+                     "Energy", "Materials"}
 DEFENSIVE_SECTORS = {"Cons. Staples", "Utilities", "Health Care", "Real Estate"}
 
 # Cross-asset context (free Yahoo futures/ETF series)
@@ -44,23 +45,34 @@ HAVEN_SECTORS = {"Utilities", "Cons. Staples"}
 
 
 def fetch_history(ticker: str, period: str = "1y") -> pd.DataFrame:
-    """Daily OHLCV with a flat DatetimeIndex and lowercase columns."""
-    df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-    if df.empty:
-        return df
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df.columns = [str(c).lower() for c in df.columns]
-    df.index = pd.to_datetime(df.index).tz_localize(None)
-    return df[["open", "high", "low", "close", "volume"]].dropna()
+    """Daily OHLCV with a flat DatetimeIndex and lowercase columns.
+
+    Never raises: on any failure (network, parse, unexpected schema) returns
+    an empty DataFrame. Callers must tolerate empties — see load_data() in
+    app.py and the guards in sentiment.py.
+    """
+    try:
+        df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+        if df.empty:
+            return df
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df.columns = [str(c).lower() for c in df.columns]
+        df.index = pd.to_datetime(df.index).tz_localize(None)
+        return df[["open", "high", "low", "close", "volume"]].dropna()
+    except Exception:
+        return pd.DataFrame()
 
 
 def fetch_all(tickers: dict[str, str], period: str = "1y") -> dict[str, pd.DataFrame]:
-    return {name: fetch_history(t, period) for name, t in tickers.items()}
-
-
-def latest_close(df: pd.DataFrame) -> float:
-    return float(df["close"].iloc[-1])
+    """Per-ticker fault isolation: one bad ticker can't kill the dashboard."""
+    out: dict[str, pd.DataFrame] = {}
+    for name, t in tickers.items():
+        try:
+            out[name] = fetch_history(t, period)
+        except Exception:  # belt-and-braces; fetch_history already swallows
+            out[name] = pd.DataFrame()
+    return out
 
 
 def pct_change(df: pd.DataFrame, days: int) -> float | None:

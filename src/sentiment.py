@@ -11,6 +11,11 @@ def _clip(x: float) -> float:
     return float(max(0.0, min(100.0, x)))
 
 
+def _is_empty(df) -> bool:
+    """True when a price frame is missing/empty — never let iloc[-1] crash."""
+    return df is None or getattr(df, "empty", True)
+
+
 def trend_score(snapshots: dict[str, dict]) -> tuple[float, str]:
     flags = [s["above_sma50"] for s in snapshots.values() if s["above_sma50"] is not None]
     if not flags:
@@ -21,7 +26,9 @@ def trend_score(snapshots: dict[str, dict]) -> tuple[float, str]:
 
 
 def momentum_score(snapshots: dict[str, dict]) -> tuple[float, str]:
-    rsis = [s["rsi"] for s in snapshots.values()]
+    rsis = [s["rsi"] for s in snapshots.values() if s.get("rsi") is not None]
+    if not rsis:
+        return 50.0, "no RSI data"
     avg = float(np.mean(rsis))
     # RSI 30 -> 0, 50 -> 50, 70 -> 100
     score = _clip((avg - 30) / 40 * 100)
@@ -29,6 +36,8 @@ def momentum_score(snapshots: dict[str, dict]) -> tuple[float, str]:
 
 
 def volatility_score(vix_df) -> tuple[float, str]:
+    if _is_empty(vix_df):
+        return 50.0, "VIX data unavailable"
     last = float(vix_df["close"].iloc[-1])
     # VIX 12 -> 100, 40 -> 0, linear in between
     score = _clip((40 - last) / (40 - 12) * 100)
@@ -42,6 +51,8 @@ def volatility_score(vix_df) -> tuple[float, str]:
 
 def fear_context(vix_df, spx_df) -> tuple[float, str]:
     """VIX/SPX-driven fear, 0 = calm … 100 = panic. Market volatility, not news."""
+    if _is_empty(vix_df) or _is_empty(spx_df):
+        return 50.0, "VIX/SPX data unavailable"
     vix = vix_df["close"]
     last = float(vix.iloc[-1])
     # Level: VIX 12 -> 0, 40 -> 100
@@ -75,6 +86,8 @@ def risk_off_rotation(sector_data: dict, tlt_df) -> tuple[float, str]:
 
 
 def macro_score(dxy_df, y10_df, y5_df) -> tuple[float, str]:
+    if _is_empty(dxy_df) or _is_empty(y10_df) or _is_empty(y5_df):
+        return 50.0, "macro data unavailable"
     parts, notes = [], []
     # USD: falling dollar = risk-on
     dxy = dxy_df["close"]

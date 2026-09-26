@@ -22,11 +22,19 @@ Headline risk is a keyword-based 0–100 gauge over the latest market headlines
 (high-risk: crash, tariff, war…; medium: Fed, CPI, inflation…; bullish words
 reduce it). It is intentionally simple — a transparent heuristic, not an NLP model.
 
-## Data sources (all free, no API keys)
+## Data sources (mostly free, no API keys)
 
-- Prices/technicals: Yahoo Finance (`yfinance`)
-- Headlines: Google News RSS
+- Prices/technicals/options: Yahoo Finance (`yfinance`), CBOE delayed-quotes API (GEX)
+- Headlines: Google News RSS + CNBC RSS
 - Economic calendar: ForexFactory weekly JSON feed
+- Earnings: Nasdaq public calendar API
+- Economy tab: FRED API — needs a free `FRED_API_KEY` (Streamlit secret or env var)
+- Fed Watch: CME ZQ futures (Yahoo) + FRED (effective rate, 10Y yield)
+
+10 tabs: Overview · Indices · Volatility & Macro · Economy · Sector Rotation ·
+News Risk · Economic Calendar · Earnings · GEX · Fed Watch.
+
+Data caches refresh when you hit ↻ Refresh (top of the Overview tab).
 
 ## Run locally
 

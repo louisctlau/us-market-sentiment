@@ -18,6 +18,7 @@ from __future__ import annotations
 import calendar as _calendar
 import io
 import math
+import time
 import urllib.request
 from datetime import date, datetime, timezone
 
@@ -61,8 +62,7 @@ def last_decision_text() -> str:
             f"September SEP median year-end dot: {d['sep_median_dot']:.1f}%.")
 
 
-def _fetch_fred_series(url: str) -> pd.DataFrame:
-    """Full FRED series history as DataFrame with a date index (forward-fillable)."""
+def _fetch_fred_series_once(url: str) -> pd.DataFrame:
     try:
         from curl_cffi import requests as _rq
         r = _rq.get(url, headers={"User-Agent": "Mozilla/5.0"},
@@ -76,6 +76,23 @@ def _fetch_fred_series(url: str) -> pd.DataFrame:
     date_col = df.columns[0]
     df[date_col] = pd.to_datetime(df[date_col])
     return df.set_index(date_col).sort_index()
+
+
+def _fetch_fred_series(url: str) -> pd.DataFrame:
+    """Full FRED series history as DataFrame with a date index (forward-fillable).
+
+    The FRED download endpoint flakes intermittently, so retry up to 3 times
+    with exponential backoff before giving up.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            return _fetch_fred_series_once(url)
+        except Exception as e:  # noqa: BLE001 — retry, then re-raise below
+            last_exc = e
+            time.sleep(1.5 ** attempt)
+    assert last_exc is not None
+    raise last_exc
 
 
 def _fetch_dff_df() -> pd.DataFrame:
