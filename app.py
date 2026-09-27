@@ -46,9 +46,9 @@ def load_data():
 
 
 @st.cache_data(ttl=6 * 3600)
-def load_credit_2y():
+def load_credit_5y():
     return fetch_all({k: CROSS_ASSETS[k] for k in ("High-Yield (HYG)", "Inv-Grade (LQD)")},
-                     period="2y")
+                     period="5y")
 
 
 @st.cache_data(ttl=900)
@@ -425,14 +425,15 @@ with tabs[2]:
                   "implied and realized roughly in line"))
 
     st.subheader("Credit fear gauge — HYG/LQD")
-    cr2y = load_credit_2y()
-    hyg, lqd = cr2y["High-Yield (HYG)"], cr2y["Inv-Grade (LQD)"]
+    cr5y = load_credit_5y()
+    hyg, lqd = cr5y["High-Yield (HYG)"], cr5y["Inv-Grade (LQD)"]
     if hyg.empty or lqd.empty:
         st.warning("Credit data unavailable.")
     else:
-        ratio = (hyg["close"] / lqd["close"]).dropna()
-        fig = line_chart(pd.DataFrame({"close": ratio}), "HYG / LQD — 2 years",
-                         {"SMA 50": sma(ratio, 50)})
+        ratio = (hyg["close"] / lqd["close"]).dropna()  # 5y: band calibration
+        disp = ratio.tail(504)  # 2y chart window
+        fig = line_chart(pd.DataFrame({"close": disp}), "HYG / LQD — 2 years",
+                         {"SMA 50": sma(ratio, 50).tail(504)})
         st.plotly_chart(fig, use_container_width=True)
         rl = float(ratio.iloc[-1])
         m50 = float(sma(ratio, 50).iloc[-1])
@@ -457,9 +458,9 @@ with tabs[2]:
                 "means flight from junk into quality (risk-off) — it often "
                 "leads or confirms equity stress.\n"
                 f"- **Right now:** {rl:.3f} sits in the {pctl:.0f}th percentile "
-                f"of its 2-year range — {band}."
+                f"of its 5-year range — {band}."
             )
-            st.markdown("**Regime bands** — percentiles of the trailing 2-year "
+            st.markdown("**Regime bands** — percentiles of the trailing 5-year "
                         "range (they move as the window rolls):")
             st.markdown(
                 "| Regime | HYG/LQD range |\n"
