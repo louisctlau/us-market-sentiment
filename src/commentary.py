@@ -110,7 +110,9 @@ def yield_commentary(y10_df: pd.DataFrame, y5_df: pd.DataFrame) -> str:
 
 def volatility_overview(vix_df: pd.DataFrame, vvix_df: pd.DataFrame,
                         skew_df: pd.DataFrame, vix9d_df: pd.DataFrame,
-                        vix3m_df: pd.DataFrame) -> str:
+                        vix3m_df: pd.DataFrame, spx_df: pd.DataFrame | None = None,
+                        hyg_df: pd.DataFrame | None = None,
+                        lqd_df: pd.DataFrame | None = None) -> str:
     """One-paragraph read across the vol complex: VIX level, vol-of-vol,
     tail-risk pricing, and term-structure shape. Thresholds documented inline."""
     v = vix_df["close"].dropna() if vix_df is not None else pd.Series(dtype=float)
@@ -162,6 +164,29 @@ def volatility_overview(vix_df: pd.DataFrame, vvix_df: pd.DataFrame,
                  "in contango — the normal upward-sloping vol curve")
         bits.append(f"The VIX term structure ({v9:.1f} / {last:.1f} / {v3:.1f} for "
                     f"9D / 30D / 3M) is {shape}.")
+
+    # Realized vs implied: 30-day realized vol (annualized) of the S&P vs VIX.
+    # Implied >> realized = options pricing fear the tape hasn't shown yet.
+    if spx_df is not None and not spx_df.empty:
+        rets = spx_df["close"].pct_change()
+        realized = rets.rolling(30).std() * np.sqrt(252) * 100
+        if not realized.dropna().empty:
+            rl = float(realized.iloc[-1])
+            gap = last - rl
+            bits.append(f"VIX {last:.1f} vs 30-day realized vol {rl:.1f}: options are "
+                        f"pricing {'more' if gap > 2 else 'less' if gap < -2 else 'about as much'} "
+                        f"fear than recent price action delivered.")
+
+    # Credit fear gauge: HYG/LQD falls when high-yield sells off vs investment
+    # grade. Below its 50-day average = credit stress the VIX may be missing.
+    if (hyg_df is not None and lqd_df is not None
+            and not hyg_df.empty and not lqd_df.empty):
+        ratio = (hyg_df["close"] / lqd_df["close"]).dropna()
+        if len(ratio) > 50:
+            rl, m50 = float(ratio.iloc[-1]), float(ratio.rolling(50).mean().iloc[-1])
+            bits.append(f"HYG/LQD {rl:.3f} is {'below' if rl < m50 else 'above'} its "
+                        f"50-day average ({m50:.3f}) — credit markets are "
+                        f"{'pricing stress' if rl < m50 else 'calm'}.")
     return " ".join(bits)
 
 

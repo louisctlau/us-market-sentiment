@@ -39,6 +39,8 @@ CROSS_ASSETS = {
     "WTI Crude Oil": "CL=F",
     "Gold": "GC=F",
     "20Y+ Treasury (TLT)": "TLT",
+    "High-Yield (HYG)": "HYG",
+    "Inv-Grade (LQD)": "LQD",
 }
 
 # Extra volatility gauges for the Volatility tab (free Yahoo CBOE indices)

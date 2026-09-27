@@ -28,6 +28,7 @@ from src.data import (
 from src.earnings import fetch_earnings
 from src.news import fetch_headlines, risk_meter
 from src.technicals import rsi, sma, technical_snapshot
+from src.vix_futures import fetch_vix_futures_curve
 
 st.set_page_config(page_title="US Market Sentiment", layout="wide")
 st.title("US Market Sentiment Dashboard")
@@ -114,6 +115,16 @@ def load_yield_curve():
     return out
 
 
+@st.cache_data(ttl=3600)
+def load_vix_futures():
+    # Latest VX futures curve from CBOE's free settlement CSVs; (curve, asof, err).
+    try:
+        curve, asof = fetch_vix_futures_curve()
+        return curve, asof, None
+    except Exception as e:
+        return None, None, str(e)
+
+
 def gauge(value: float, title: str, color_ranges=True, invert=False,
           steps: list | None = None) -> go.Figure:
     default_steps = [{"range": [0, 25], "color": "#e74c3c"},
@@ -151,6 +162,7 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
 
 
 idx, vm, vx, sec, xa, data_ts = load_data()
+vx_fut, vx_fut_asof, vx_fut_err = load_vix_futures()
 failed = sorted({name for group in (idx, vm, vx, sec, xa)
                  for name, df in group.items() if df.empty})
 if failed:
@@ -301,7 +313,10 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Volatility overview")
     st.info(C.volatility_overview(vm["VIX"], vx["VVIX"], vx["SKEW"],
-                                  vx["VIX 9D"], vx["VIX 3M"]))
+                                  vx["VIX 9D"], vx["VIX 3M"],
+                                  spx_df=idx["S&P 500"],
+                                  hyg_df=xa["High-Yield (HYG)"],
+                                  lqd_df=xa["Inv-Grade (LQD)"]))
 
     mcols = st.columns(3)
     for col, (label, df, fmt) in zip(
@@ -364,6 +379,60 @@ with tabs[2]:
                  if abs(l3 - l9) < 1.0 else
                  "contango — the normal upward-sloping vol curve")
         st.write(f"**{l9:.1f} / {l30:.1f} / {l3:.1f}** (9D / 30D / 3M) — {shape}")
+
+    st.subheader("VIX futures term structure (CBOE)")
+    if vx_fut_err:
+        st.warning(f"VIX futures unavailable: {vx_fut_err}")
+    elif vx_fut is not None and not vx_fut.empty:
+        fig = go.Figure(go.Scatter(x=vx_fut["expiration"], y=vx_fut["price"],
+                                   mode="lines+markers", name="VX"))
+        fig.update_layout(title=f"VX futures curve — as of {vx_fut_asof:%b %d, %Y}",
+                          height=320, margin=dict(t=40, b=10),
+                          xaxis_title="Expiration", yaxis_title="Price")
+        st.plotly_chart(fig, use_container_width=True)
+        front = float(vx_fut["price"].iloc[0])
+        back = float(vx_fut["price"].iloc[-1])
+        st.write(f"**Front {front:.2f} → back {back:.2f}** — " +
+                 ("backwardation ⚠️ — futures traders expect near-term stress"
+                  if front > back else
+                  "contango — futures curve upward-sloping as usual"))
+        st.caption("Source: CBOE daily settlement CSVs (free, no key).")
+
+    st.subheader("Realized vs implied volatility")
+    spx = idx["S&P 500"]
+    if spx.empty or vm["VIX"].empty:
+        st.warning("Realized-vol data unavailable.")
+    else:
+        realized = spx["close"].pct_change().rolling(30).std() * (252 ** 0.5) * 100
+        both = pd.DataFrame({"Realized 30D": realized,
+                             "VIX (implied)": vm["VIX"]["close"]}).dropna().tail(252)
+        fig = go.Figure()
+        for col in both.columns:
+            fig.add_trace(go.Scatter(x=both.index, y=both[col], name=col))
+        fig.update_layout(title="30-day realized vol vs VIX — 1 year", height=320,
+                          margin=dict(t=40, b=10), yaxis_title="Vol (ann. %)")
+        st.plotly_chart(fig, use_container_width=True)
+        lv, lr = float(both["VIX (implied)"].iloc[-1]), float(both["Realized 30D"].iloc[-1])
+        st.write(f"**VIX {lv:.1f} vs realized {lr:.1f}** — " +
+                 ("options pricing fear the tape hasn't shown yet" if lv - lr > 2 else
+                  "realized vol running hotter than options imply" if lr - lv > 2 else
+                  "implied and realized roughly in line"))
+
+    st.subheader("Credit fear gauge — HYG/LQD")
+    hyg, lqd = xa["High-Yield (HYG)"], xa["Inv-Grade (LQD)"]
+    if hyg.empty or lqd.empty:
+        st.warning("Credit data unavailable.")
+    else:
+        ratio = (hyg["close"] / lqd["close"]).dropna().tail(252)
+        fig = line_chart(pd.DataFrame({"close": ratio}), "HYG / LQD — 1 year",
+                         {"SMA 50": sma(ratio, 50).tail(252)})
+        st.plotly_chart(fig, use_container_width=True)
+        rl = float(ratio.iloc[-1])
+        m50 = float(sma(ratio, 50).iloc[-1])
+        st.write(f"**HYG/LQD {rl:.3f}** — " +
+                 (f"below 50-day avg ({m50:.3f}): credit stress the VIX may be missing"
+                  if rl < m50 else
+                  f"above 50-day avg ({m50:.3f}): credit markets calm"))
 
 # ---------------- ECONOMY (FRED API) ----------------
 with tabs[3]:

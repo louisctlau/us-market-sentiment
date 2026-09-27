@@ -34,8 +34,10 @@ reduce it). It is intentionally simple — a transparent heuristic, not an NLP m
 10 tabs: Overview · Indices · Volatility · Economy · Sector Rotation ·
 News Risk · Economic Calendar · Earnings · GEX · Fed Watch.
 
-Volatility tab: VIX, VVIX (vol-of-vol), SKEW (tail-risk pricing), and the VIX
-9D/30D/3M term structure (Yahoo). DXY lives on the Economy tab (Yahoo).
+Volatility tab: VIX, VVIX (vol-of-vol), SKEW (tail-risk pricing), the VIX
+9D/30D/3M term structure (Yahoo), VIX futures curve (CBOE daily settlement
+CSVs, free), 30-day realized vs implied vol, and the HYG/LQD credit fear
+gauge. DXY lives on the Economy tab (Yahoo).
 
 Data caches refresh when you hit ↻ Refresh (top of the Overview tab).
 
