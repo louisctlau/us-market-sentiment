@@ -37,6 +37,39 @@ st.set_page_config(page_title="US Market Sentiment", layout="wide")
 # reached via the footer link.
 st.markdown("<style>[data-testid='stSidebarNav']{display:none;}</style>",
             unsafe_allow_html=True)
+# Fixed footer bar: pinned to the viewport bottom so the view counter stays
+# visible on every tab at any scroll position. Translucent + blurred so it
+# reads cleanly over scrolling content in both light and dark themes.
+st.markdown(
+    """
+    <style>
+    .usms-footer {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 999990;
+        text-align: center;
+        padding: 7px 12px;
+        font-size: 13px;
+        line-height: 1.4;
+        color: #808080;
+        background: rgba(127, 127, 127, 0.14);
+        -webkit-backdrop-filter: blur(10px);
+        backdrop-filter: blur(10px);
+        border-top: 1px solid rgba(127, 127, 127, 0.35);
+    }
+    .usms-footer a {
+        color: #808080;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+    .usms-footer a:hover {
+        color: #ff4b4b;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True)
 view_count = get_view_count()  # one increment per browser session
 st.title("US Market Sentiment Dashboard")
 st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals, sectors, headlines, calendar")
@@ -938,4 +971,9 @@ st.caption("Data: Yahoo Finance (prices), FRED API (economy), Google News + CNBC
            "(calendar), Nasdaq (earnings), CME ZQ futures + FRED (Fed Watch). "
            "Educational — not investment advice. "
            "Data caches refresh on ↻ Refresh.")
-st.caption(f"Views: {view_count:,} · [Changelog](/changelog)")
+# Spacer so the fixed footer never covers the bottom of the page content.
+st.markdown("<div style='height: 36px;'></div>", unsafe_allow_html=True)
+st.markdown(
+    f"<div class='usms-footer'>Views: {view_count:,} &nbsp;·&nbsp; "
+    "<a href='/changelog'>Changelog</a></div>",
+    unsafe_allow_html=True)
