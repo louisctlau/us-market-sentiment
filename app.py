@@ -248,6 +248,7 @@ score = float(np.mean([score_today, *past]))
 
 fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
 rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
+snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
 
 headlines, news_err, news_ts = load_news()
 headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
