@@ -28,16 +28,16 @@ reduce it). It is intentionally simple — a transparent heuristic, not an NLP m
 - Headlines: Google News RSS + CNBC RSS
 - Economic calendar: ForexFactory weekly JSON feed
 - Earnings: Nasdaq public calendar API
-- Economy tab: FRED API — needs a free `FRED_API_KEY` (Streamlit secret or env var)
+- Macro tab: FRED API — needs a free `FRED_API_KEY` (Streamlit secret or env var)
 - Fed Watch: CME ZQ futures (Yahoo) + FRED (effective rate, 10Y yield)
 
-10 tabs: Overview · Indices · Volatility · Economy · Sector Rotation ·
+10 tabs: Overview · Indices · Volatility · Macro · Sector Rotation ·
 News Risk · Economic Calendar · Earnings · GEX · Fed Watch.
 
 Volatility tab: VIX, VVIX (vol-of-vol), SKEW (tail-risk pricing), the VIX
 9D/30D/3M term structure (Yahoo), VIX futures curve (CBOE daily settlement
 CSVs, free), 30-day realized vs implied vol, and the HYG/LQD credit fear
-gauge. DXY lives on the Economy tab (Yahoo).
+gauge. DXY lives on the Macro tab (Yahoo), under "Dollar Strength".
 
 Data caches refresh when you hit ↻ Refresh (top of the Overview tab).
 

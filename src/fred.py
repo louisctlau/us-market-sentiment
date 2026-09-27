@@ -86,7 +86,7 @@ def get_series(
     return df.set_index("date").dropna(subset=["value"]).sort_index()
 
 
-# Series used by the Economy tab: id -> (label, transform for headline value)
+# Series used by the Macro tab: id -> (label, transform for headline value)
 ECON_SERIES = {
     "FEDFUNDS": "Fed funds rate",
     "UNRATE": "Unemployment rate",
@@ -117,7 +117,7 @@ YIELD_CURVE_SERIES = {
 
 
 def headline_value(series_id: str, df: pd.DataFrame) -> tuple[float, str] | tuple[None, str]:
-    """Latest headline number and its as-of date for the Economy tab."""
+    """Latest headline number and its as-of date for the Macro tab."""
     if df.empty:
         return None, "n/a"
     asof = df.index[-1].strftime("%b %d, %Y")

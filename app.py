@@ -198,7 +198,7 @@ rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
 headlines, news_err, news_ts = load_news()
 headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
 
-tabs = st.tabs(["Overview", "Indices", "Volatility", "Economy",
+tabs = st.tabs(["Overview", "Indices", "Volatility", "Macro",
                 "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
                 "GEX", "Fed Watch"])
 
@@ -470,9 +470,9 @@ with tabs[2]:
                 f"| 🔴 High fear | < {q20:.3f} |"
             )
 
-# ---------------- ECONOMY (FRED API) ----------------
+# ---------------- MACRO (FRED API) ----------------
 with tabs[3]:
-    st.subheader("US Economy — FRED")
+    st.subheader("US Macro — FRED")
     st.caption("Official macro series via the FRED API "
                "(Federal Reserve Bank of St. Louis).")
     try:
@@ -483,7 +483,7 @@ with tabs[3]:
     except Exception as e:
         econ, econ_err = None, str(e)
     if econ_err == "nokey":
-        st.info("The Economy tab needs a free FRED API key — get one at "
+        st.info("The Macro tab needs a free FRED API key — get one at "
                 "https://fred.stlouisfed.org/docs/api/api_key.html and add it as "
                 "the `FRED_API_KEY` secret (Streamlit Cloud: app Settings → Secrets; "
                 "local runs: `.streamlit/secrets.toml`). Then press ↻ Refresh.")
@@ -509,40 +509,31 @@ with tabs[3]:
         heads, asofs = {}, {}
         for sid in FR.ECON_SERIES:
             heads[sid], asofs[sid] = FR.headline_value(sid, econ[sid])
-        cards = list(FR.ECON_SERIES)
-        for row in range(3):
-            cols = st.columns(3)
-            for col, sid in zip(cols, cards[row * 3:(row + 1) * 3]):
+
+        def econ_cards(sids):
+            cols = st.columns(len(sids))
+            for col, sid in zip(cols, sids):
                 val = heads[sid]
                 col.metric(FR.ECON_SERIES[sid],
                            fmts[sid].format(val) if val is not None else "n/a",
                            help=f"As of {asofs[sid]}")
 
-        unrate = econ["UNRATE"]["value"]
-        unrate_yoy = unrate.iloc[-1] - unrate.iloc[-13] if len(unrate) > 13 else None
-        pay3m = econ["PAYEMS"]["value"].diff().tail(3).mean()
-        labor_bits = []
-        if unrate_yoy is not None:
-            labor_bits.append(
-                f"unemployment {unrate.iloc[-1]:.1f}% "
-                f"({'up' if unrate_yoy > 0 else 'down'} {abs(unrate_yoy):.1f}pp "
-                "vs a year ago)")
-        if not pd.isna(pay3m):
-            labor_bits.append(f"payrolls averaging {pay3m:+,.0f}k/month over 3 months")
-        if labor_bits:
-            st.info("**Labor read:** " + "; ".join(labor_bits) + ".")
+        def econ_chart(sid, col=None):
+            s = econ_display(sid, econ[sid]).dropna().tail(260)
+            fig = go.Figure(go.Scatter(x=s.index, y=s, line=dict(width=2)))
+            fig.update_layout(title=f"{FR.ECON_SERIES[sid]} — 5 years",
+                              height=300, margin=dict(t=40, b=10))
+            (col or st).plotly_chart(fig, use_container_width=True)
 
-        st.subheader("Trends — 5 years")
-        chart_ids = ["CPIAUCSL", "PCEPI", "UNRATE", "FEDFUNDS",
-                     "ICSA", "PAYEMS", "GDP"]
-        for i in range(0, len(chart_ids), 2):
-            cols = st.columns(2)
-            for col, sid in zip(cols, chart_ids[i:i + 2]):
-                s = econ_display(sid, econ[sid]).dropna().tail(260)
-                fig = go.Figure(go.Scatter(x=s.index, y=s, line=dict(width=2)))
-                fig.update_layout(title=f"{FR.ECON_SERIES[sid]} — 5 years",
-                                  height=300, margin=dict(t=40, b=10))
-                col.plotly_chart(fig, use_container_width=True)
+        st.subheader("Inflation")
+        econ_cards(["CPIAUCSL", "PCEPI"])
+        cols = st.columns(2)
+        econ_chart("CPIAUCSL", cols[0])
+        econ_chart("PCEPI", cols[1])
+
+        st.subheader("Fed Funds Rate")
+        econ_cards(["FEDFUNDS", "DGS2", "DGS10"])
+        econ_chart("FEDFUNDS")
         y2 = econ_display("DGS2", econ["DGS2"]).dropna().tail(260)
         y10 = econ_display("DGS10", econ["DGS10"]).dropna().tail(260)
         fig = go.Figure()
@@ -595,12 +586,37 @@ with tabs[3]:
                 spr = d["10Y"] - d["2Y"]
                 st.caption(f"10Y–2Y spread {spr:+.2f}pp — " +
                            ("inverted ⚠️" if spr < 0 else "normal"))
+
+        st.subheader("Labour Market")
+        econ_cards(["UNRATE", "ICSA", "PAYEMS"])
+        unrate = econ["UNRATE"]["value"]
+        unrate_yoy = unrate.iloc[-1] - unrate.iloc[-13] if len(unrate) > 13 else None
+        pay3m = econ["PAYEMS"]["value"].diff().tail(3).mean()
+        labor_bits = []
+        if unrate_yoy is not None:
+            labor_bits.append(
+                f"unemployment {unrate.iloc[-1]:.1f}% "
+                f"({'up' if unrate_yoy > 0 else 'down'} {abs(unrate_yoy):.1f}pp "
+                "vs a year ago)")
+        if not pd.isna(pay3m):
+            labor_bits.append(f"payrolls averaging {pay3m:+,.0f}k/month over 3 months")
+        if labor_bits:
+            st.info("**Labor read:** " + "; ".join(labor_bits) + ".")
+        cols = st.columns(2)
+        econ_chart("UNRATE", cols[0])
+        econ_chart("ICSA", cols[1])
+        econ_chart("PAYEMS")
+
+        st.subheader("GDP")
+        econ_cards(["GDP"])
+        econ_chart("GDP")
+
         st.caption("Series IDs: " + ", ".join(
             dict.fromkeys(list(FR.ECON_SERIES) +
                           [sid for sid, _yrs in FR.YIELD_CURVE_SERIES.values()])) +
             ". Source: FRED API, Federal Reserve Bank of St. Louis.")
 
-    st.subheader("USD strength — DXY")
+    st.subheader("Dollar Strength")
     st.caption("Yahoo Finance (DX-Y.NYB) — 1 year.")
     if vm["DXY (USD Index)"].empty:
         st.warning("DXY data unavailable.")
