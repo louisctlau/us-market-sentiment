@@ -61,3 +61,6 @@ streamlit run app.py
 ```
 
 Educational — not investment advice.
+
+## Changelog
+Shipped changes are listed in [CHANGELOG.md](CHANGELOG.md), also visible in the app via the Changelog link in the footer.

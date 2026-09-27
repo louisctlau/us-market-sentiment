@@ -29,9 +29,15 @@ from src.data import (
 from src.earnings import fetch_earnings
 from src.news import fetch_headlines, risk_meter
 from src.technicals import rsi, sma, technical_snapshot
+from src.views import get_view_count
 from src.vix_futures import fetch_vix_futures_curve
 
 st.set_page_config(page_title="US Market Sentiment", layout="wide")
+# Sidebar nav is hidden: the app is tab-based, and the changelog page is
+# reached via the footer link.
+st.markdown("<style>[data-testid='stSidebarNav']{display:none;}</style>",
+            unsafe_allow_html=True)
+view_count = get_view_count()  # one increment per browser session
 st.title("US Market Sentiment Dashboard")
 st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals, sectors, headlines, calendar")
 
@@ -932,3 +938,4 @@ st.caption("Data: Yahoo Finance (prices), FRED API (economy), Google News + CNBC
            "(calendar), Nasdaq (earnings), CME ZQ futures + FRED (Fed Watch). "
            "Educational — not investment advice. "
            "Data caches refresh on ↻ Refresh.")
+st.caption(f"Views: {view_count:,} · [Changelog](/changelog)")
