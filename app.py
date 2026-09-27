@@ -45,6 +45,12 @@ def load_data():
     return idx, vm, vx, sec, xa, datetime.now(timezone.utc)
 
 
+@st.cache_data(ttl=6 * 3600)
+def load_credit_2y():
+    return fetch_all({k: CROSS_ASSETS[k] for k in ("High-Yield (HYG)", "Inv-Grade (LQD)")},
+                     period="2y")
+
+
 @st.cache_data(ttl=900)
 def load_news():
     try:
@@ -419,13 +425,14 @@ with tabs[2]:
                   "implied and realized roughly in line"))
 
     st.subheader("Credit fear gauge — HYG/LQD")
-    hyg, lqd = xa["High-Yield (HYG)"], xa["Inv-Grade (LQD)"]
+    cr2y = load_credit_2y()
+    hyg, lqd = cr2y["High-Yield (HYG)"], cr2y["Inv-Grade (LQD)"]
     if hyg.empty or lqd.empty:
         st.warning("Credit data unavailable.")
     else:
-        ratio = (hyg["close"] / lqd["close"]).dropna().tail(252)
-        fig = line_chart(pd.DataFrame({"close": ratio}), "HYG / LQD — 1 year",
-                         {"SMA 50": sma(ratio, 50).tail(252)})
+        ratio = (hyg["close"] / lqd["close"]).dropna()
+        fig = line_chart(pd.DataFrame({"close": ratio}), "HYG / LQD — 2 years",
+                         {"SMA 50": sma(ratio, 50)})
         st.plotly_chart(fig, use_container_width=True)
         rl = float(ratio.iloc[-1])
         m50 = float(sma(ratio, 50).iloc[-1])
