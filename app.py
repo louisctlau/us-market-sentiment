@@ -440,6 +440,24 @@ with tabs[2]:
                  (f"below 50-day avg ({m50:.3f}): credit stress the VIX may be missing"
                   if rl < m50 else
                   f"above 50-day avg ({m50:.3f}): credit markets calm"))
+        pctl = float((ratio <= rl).mean()) * 100
+        band = ("near 2-year highs — strong credit risk appetite" if pctl >= 80 else
+                "in the upper part of its 2-year range" if pctl >= 60 else
+                "mid-range vs the last 2 years" if pctl >= 40 else
+                "in the lower part of its 2-year range — fading risk appetite" if pctl >= 20 else
+                "near 2-year lows — credit stress")
+        with st.expander("How to read this gauge"):
+            st.markdown(
+                "- **What it is:** HYG (high-yield “junk” bonds) ÷ LQD "
+                "(investment-grade bonds). Both are bond funds, so the ratio "
+                "isolates appetite for *credit* risk.\n"
+                "- **How to read it:** a *rising* ratio means investors are "
+                "comfortable reaching for yield (risk-on); a *falling* ratio "
+                "means flight from junk into quality (risk-off) — it often "
+                "leads or confirms equity stress.\n"
+                f"- **Right now:** {rl:.3f} sits in the {pctl:.0f}th percentile "
+                f"of its 2-year range — {band}."
+            )
 
 # ---------------- ECONOMY (FRED API) ----------------
 with tabs[3]:
