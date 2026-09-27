@@ -492,7 +492,7 @@ with tabs[3]:
     else:
         def econ_display(sid: str, df: pd.DataFrame) -> pd.Series:
             v = df["value"]
-            if sid in ("CPIAUCSL", "PCEPI"):
+            if sid in ("CPIAUCSL", "PCEPI", "PCEPILFE"):
                 return v.pct_change(12) * 100
             if sid == "ICSA":
                 return v.rolling(4).mean()
@@ -504,6 +504,7 @@ with tabs[3]:
 
         fmts = {"FEDFUNDS": "{:.2f}%", "UNRATE": "{:.1f}%",
                 "CPIAUCSL": "{:+.1f}%", "PCEPI": "{:+.1f}%",
+                "PCEPILFE": "{:+.1f}%", "T5YIE": "{:.2f}%",
                 "ICSA": "{:,.0f}", "PAYEMS": "{:+,.0f}k",
                 "GDP": "{:+.1f}%", "DGS2": "{:.2f}%", "DGS10": "{:.2f}%"}
         heads, asofs = {}, {}
@@ -526,10 +527,13 @@ with tabs[3]:
             (col or st).plotly_chart(fig, use_container_width=True)
 
         st.subheader("Inflation")
-        econ_cards(["CPIAUCSL", "PCEPI"])
+        econ_cards(["CPIAUCSL", "PCEPI", "PCEPILFE", "T5YIE"])
         cols = st.columns(2)
         econ_chart("CPIAUCSL", cols[0])
         econ_chart("PCEPI", cols[1])
+        cols = st.columns(2)
+        econ_chart("PCEPILFE", cols[0])
+        econ_chart("T5YIE", cols[1])
 
         st.subheader("Fed Funds Rate")
         econ_cards(["FEDFUNDS", "DGS2", "DGS10"])
@@ -541,6 +545,15 @@ with tabs[3]:
         fig.add_trace(go.Scatter(x=y10.index, y=y10, name="10Y"))
         fig.update_layout(title="Treasury yields (FRED) — 5 years",
                           height=300, margin=dict(t=40, b=10))
+        st.plotly_chart(fig, use_container_width=True)
+        spr_hist = (y10 - y2).dropna().tail(260)
+        fig = go.Figure(go.Scatter(x=spr_hist.index, y=spr_hist,
+                                   line=dict(width=2),
+                                   fill="tozeroy"))
+        fig.add_hline(y=0, line_dash="dash", line_color="gray")
+        fig.update_layout(title="10Y–2Y spread — 5 years",
+                          height=300, margin=dict(t=40, b=10),
+                          yaxis_ticksuffix="pp")
         st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("US Treasury yield curve")
@@ -592,6 +605,8 @@ with tabs[3]:
         unrate = econ["UNRATE"]["value"]
         unrate_yoy = unrate.iloc[-1] - unrate.iloc[-13] if len(unrate) > 13 else None
         pay3m = econ["PAYEMS"]["value"].diff().tail(3).mean()
+        u3m = unrate.rolling(3).mean()
+        sahm = u3m.iloc[-1] - u3m.tail(12).min() if len(u3m) >= 12 else None
         labor_bits = []
         if unrate_yoy is not None:
             labor_bits.append(
@@ -600,6 +615,10 @@ with tabs[3]:
                 "vs a year ago)")
         if not pd.isna(pay3m):
             labor_bits.append(f"payrolls averaging {pay3m:+,.0f}k/month over 3 months")
+        if sahm is not None:
+            labor_bits.append(
+                f"Sahm rule {sahm:.2f}pp "
+                f"({'⚠️ recession trigger (≥0.50)' if sahm >= 0.50 else 'below 0.50 trigger'}")
         if labor_bits:
             st.info("**Labor read:** " + "; ".join(labor_bits) + ".")
         cols = st.columns(2)

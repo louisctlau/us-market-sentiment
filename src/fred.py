@@ -92,6 +92,8 @@ ECON_SERIES = {
     "UNRATE": "Unemployment rate",
     "CPIAUCSL": "CPI (YoY %)",
     "PCEPI": "PCE price index (YoY %)",
+    "PCEPILFE": "Core PCE (YoY %)",
+    "T5YIE": "5Y breakeven inflation",
     "ICSA": "Initial jobless claims (4-wk avg)",
     "PAYEMS": "Nonfarm payrolls (monthly chg, k)",
     "GDP": "Real GDP (QoQ ann. %)",
@@ -122,7 +124,7 @@ def headline_value(series_id: str, df: pd.DataFrame) -> tuple[float, str] | tupl
         return None, "n/a"
     asof = df.index[-1].strftime("%b %d, %Y")
     v = df["value"]
-    if series_id in ("CPIAUCSL", "PCEPI"):
+    if series_id in ("CPIAUCSL", "PCEPI", "PCEPILFE"):
         val = v.pct_change(12).iloc[-1] * 100 if len(v) > 12 else None
     elif series_id == "ICSA":
         val = v.tail(4).mean()

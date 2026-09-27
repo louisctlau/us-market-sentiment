@@ -39,6 +39,10 @@ Volatility tab: VIX, VVIX (vol-of-vol), SKEW (tail-risk pricing), the VIX
 CSVs, free), 30-day realized vs implied vol, and the HYG/LQD credit fear
 gauge. DXY lives on the Macro tab (Yahoo), under "Dollar Strength".
 
+Macro tab sections: Inflation (CPI, PCE, core PCE, 5Y breakeven), Fed Funds
+Rate (fed funds, 2Y/10Y yields, 10Y–2Y spread history, yield curve), Labour
+Market (unemployment, claims, payrolls, Sahm rule), GDP, Dollar Strength.
+
 Data caches refresh when you hit ↻ Refresh (top of the Overview tab).
 
 ## Run locally
