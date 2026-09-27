@@ -490,6 +490,8 @@ with tabs[3]:
     elif econ_err:
         st.warning(f"FRED data unavailable: {econ_err}")
     else:
+        st.info(C.macro_overview(econ, vm["DXY (USD Index)"]))
+
         def econ_display(sid: str, df: pd.DataFrame) -> pd.Series:
             v = df["value"]
             if sid in ("CPIAUCSL", "PCEPI", "PCEPILFE"):

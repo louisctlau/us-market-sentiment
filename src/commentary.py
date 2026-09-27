@@ -264,3 +264,73 @@ def market_commentary(ctx: dict) -> str:
 
     return (f"**Regime: {regime} ({score:.1f}/100).** "
             f"{lead}{watch} {risk_txt}")
+
+
+def _fred_last(econ: dict, sid: str) -> pd.Series:
+    df = econ.get(sid)
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    return df["value"].dropna()
+
+
+def macro_overview(econ: dict, dxy_df: pd.DataFrame | None = None) -> str:
+    """One-paragraph read across the Macro tab: inflation vs target, labor,
+    rates/curve shape, growth, and the dollar. Thresholds documented inline."""
+    if not econ:
+        return "Macro data unavailable (add a FRED API key to populate this tab)."
+    bits = []
+
+    # Inflation: CPI + core PCE YoY vs the Fed's 2% target; 5Y breakeven for
+    # what the bond market expects.
+    cpi = _fred_last(econ, "CPIAUCSL")
+    core = _fred_last(econ, "PCEPILFE")
+    bei = _fred_last(econ, "T5YIE")
+    if len(cpi) > 12 and len(core) > 12:
+        cpi_yoy = float(cpi.pct_change(12).iloc[-1] * 100)
+        core_yoy = float(core.pct_change(12).iloc[-1] * 100)
+        stance = ("above the Fed's 2% target" if core_yoy > 2.25
+                  else "near the Fed's 2% target" if core_yoy >= 1.75
+                  else "below the Fed's 2% target")
+        bei_txt = f"; the bond market prices {float(bei.iloc[-1]):.2f}% inflation over 5 years" if not bei.empty else ""
+        bits.append(f"Inflation is running {cpi_yoy:.1f}% (CPI) / {core_yoy:.1f}% (core PCE), {stance}{bei_txt}.")
+
+    # Labor: unemployment, Sahm rule (triggers at 0.50pp), payrolls 3M avg.
+    unrate = _fred_last(econ, "UNRATE")
+    pay = _fred_last(econ, "PAYEMS")
+    if not unrate.empty:
+        u = float(unrate.iloc[-1])
+        u3m = unrate.rolling(3).mean()
+        sahm = float(u3m.iloc[-1] - u3m.tail(12).min()) if len(u3m) >= 12 else None
+        pay_txt = ""
+        if not pay.empty:
+            p3m = float(pay.diff().tail(3).mean())
+            pay_txt = f", payrolls averaging {p3m:+,.0f}k/month over 3 months"
+        sahm_txt = (f"; Sahm rule {sahm:.2f}pp ({'above' if sahm >= 0.50 else 'below'} the 0.50 recession trigger)"
+                    if sahm is not None else "")
+        cond = "tight" if u < 4.0 else "cooling" if u < 5.0 else "weak"
+        bits.append(f"The labor market looks {cond}: unemployment {u:.1f}%{pay_txt}{sahm_txt}.")
+
+    # Rates: fed funds level + 10Y-2Y curve shape (inverted < 0).
+    ff = _fred_last(econ, "FEDFUNDS")
+    y2 = _fred_last(econ, "DGS2")
+    y10 = _fred_last(econ, "DGS10")
+    if not ff.empty and not y2.empty and not y10.empty:
+        spr = float(y10.iloc[-1] - y2.iloc[-1])
+        shape = "upward-sloping" if spr > 0.25 else "flat" if spr >= 0 else "inverted"
+        bits.append(f"Fed funds stand at {float(ff.iloc[-1]):.2f}%; the 10Y–2Y spread is {spr:+.2f}pp ({shape} curve).")
+
+    # Growth: real GDP QoQ annualized.
+    gdp = _fred_last(econ, "GDP")
+    if len(gdp) > 1:
+        g = float((gdp.iloc[-1] / gdp.iloc[-2]) ** 4 - 1) * 100
+        bits.append(f"Real GDP grew {g:+.1f}% (QoQ annualized).")
+
+    # Dollar: DXY vs 50-day average (falling dollar = risk-on).
+    if dxy_df is not None and not dxy_df.empty:
+        d = dxy_df["close"].dropna()
+        ma50 = sma(d, 50)
+        if not d.empty and not np.isnan(ma50.iloc[-1]):
+            pos = "above" if d.iloc[-1] > ma50.iloc[-1] else "below"
+            bits.append(f"The dollar (DXY {float(d.iloc[-1]):.1f}) trades {pos} its 50-day average.")
+
+    return " ".join(bits) if bits else "Macro data unavailable."
