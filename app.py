@@ -446,6 +446,7 @@ with tabs[2]:
                 "mid-range vs the last 2 years" if pctl >= 40 else
                 "in the lower part of its 2-year range — fading risk appetite" if pctl >= 20 else
                 "near 2-year lows — credit stress")
+        q20 = float(ratio.quantile(0.2)); q80 = float(ratio.quantile(0.8))
         with st.expander("How to read this gauge"):
             st.markdown(
                 "- **What it is:** HYG (high-yield “junk” bonds) ÷ LQD "
@@ -457,6 +458,15 @@ with tabs[2]:
                 "leads or confirms equity stress.\n"
                 f"- **Right now:** {rl:.3f} sits in the {pctl:.0f}th percentile "
                 f"of its 2-year range — {band}."
+            )
+            st.markdown("**Regime bands** — percentiles of the trailing 2-year "
+                        "range (they move as the window rolls):")
+            st.markdown(
+                "| Regime | HYG/LQD range |\n"
+                "|---|---|\n"
+                f"| 🟢 Complacent (low fear) | ≥ {q80:.3f} |\n"
+                f"| 🟡 Normal | {q20:.3f} – {q80:.3f} |\n"
+                f"| 🔴 High fear | < {q20:.3f} |"
             )
 
 # ---------------- ECONOMY (FRED API) ----------------
