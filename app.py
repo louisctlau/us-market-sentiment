@@ -513,8 +513,8 @@ with tabs[3]:
         for sid in FR.ECON_SERIES:
             heads[sid], asofs[sid] = FR.headline_value(sid, econ[sid])
 
-        def econ_cards(sids):
-            cols = st.columns(len(sids))
+        def econ_cards(sids, cols=None):
+            cols = cols or st.columns(len(sids))
             for col, sid in zip(cols, sids):
                 val = heads[sid]
                 col.metric(FR.ECON_SERIES[sid],
@@ -603,12 +603,20 @@ with tabs[3]:
                            ("inverted ⚠️" if spr < 0 else "normal"))
 
         st.subheader("Labour Market")
-        econ_cards(["UNRATE", "ICSA", "PAYEMS"])
         unrate = econ["UNRATE"]["value"]
-        unrate_yoy = unrate.iloc[-1] - unrate.iloc[-13] if len(unrate) > 13 else None
-        pay3m = econ["PAYEMS"]["value"].diff().tail(3).mean()
         u3m = unrate.rolling(3).mean()
         sahm = u3m.iloc[-1] - u3m.tail(12).min() if len(u3m) >= 12 else None
+        lm_cols = st.columns(4)
+        econ_cards(["UNRATE", "ICSA", "PAYEMS"], lm_cols[:3])
+        with lm_cols[3]:
+            trig = sahm is not None and not pd.isna(sahm) and sahm >= 0.50
+            st.metric("Sahm rule",
+                      f"{sahm:.2f}pp" if sahm is not None and not pd.isna(sahm) else "n/a",
+                      "⚠️ above 0.50 trigger" if trig else "below 0.50 trigger",
+                      help=f"As of {asofs['UNRATE']}; 3-mo avg unemployment "
+                           "vs its 12-mo low — a recession has started when it hits 0.50")
+        unrate_yoy = unrate.iloc[-1] - unrate.iloc[-13] if len(unrate) > 13 else None
+        pay3m = econ["PAYEMS"]["value"].diff().tail(3).mean()
         labor_bits = []
         if unrate_yoy is not None:
             labor_bits.append(
