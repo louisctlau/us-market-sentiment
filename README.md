@@ -31,8 +31,11 @@ reduce it). It is intentionally simple — a transparent heuristic, not an NLP m
 - Economy tab: FRED API — needs a free `FRED_API_KEY` (Streamlit secret or env var)
 - Fed Watch: CME ZQ futures (Yahoo) + FRED (effective rate, 10Y yield)
 
-10 tabs: Overview · Indices · Volatility & Macro · Economy · Sector Rotation ·
+10 tabs: Overview · Indices · Volatility · Economy · Sector Rotation ·
 News Risk · Economic Calendar · Earnings · GEX · Fed Watch.
+
+Volatility tab: VIX, VVIX (vol-of-vol), SKEW (tail-risk pricing), and the VIX
+9D/30D/3M term structure (Yahoo). DXY lives on the Economy tab (Yahoo).
 
 Data caches refresh when you hit ↻ Refresh (top of the Overview tab).
 

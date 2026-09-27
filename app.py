@@ -20,6 +20,7 @@ from src.data import (
     INDICES,
     OFFENSIVE_SECTORS,
     SECTORS,
+    VOL_EXTRA,
     VOL_MACRO,
     fetch_all,
     pct_change,
@@ -37,9 +38,10 @@ st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals,
 def load_data():
     idx = fetch_all(INDICES, period="1y")
     vm = fetch_all(VOL_MACRO, period="1y")
+    vx = fetch_all(VOL_EXTRA, period="1y")
     sec = fetch_all(SECTORS, period="6mo")
     xa = fetch_all(CROSS_ASSETS, period="1y")
-    return idx, vm, sec, xa, datetime.now(timezone.utc)
+    return idx, vm, vx, sec, xa, datetime.now(timezone.utc)
 
 
 @st.cache_data(ttl=900)
@@ -148,8 +150,8 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
     return fig
 
 
-idx, vm, sec, xa, data_ts = load_data()
-failed = sorted({name for group in (idx, vm, sec, xa)
+idx, vm, vx, sec, xa, data_ts = load_data()
+failed = sorted({name for group in (idx, vm, vx, sec, xa)
                  for name, df in group.items() if df.empty})
 if failed:
     st.warning(f"Data unavailable for: {', '.join(failed)} — "
@@ -178,7 +180,7 @@ rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
 headlines, news_err, news_ts = load_news()
 headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
 
-tabs = st.tabs(["Overview", "Indices", "Volatility & Macro", "Economy",
+tabs = st.tabs(["Overview", "Indices", "Volatility", "Economy",
                 "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
                 "GEX", "Fed Watch"])
 
@@ -295,10 +297,25 @@ with tabs[1]:
                 {"Metric": "1-month return", "Value": fmt(s["ret_1m"], "%")},
             ]), use_container_width=True, hide_index=True)
 
-# ---------------- VOLATILITY & MACRO ----------------
+# ---------------- VOLATILITY ----------------
 with tabs[2]:
-    c1, c2 = st.columns(2)
-    with c1:
+    st.subheader("Volatility overview")
+    st.info(C.volatility_overview(vm["VIX"], vx["VVIX"], vx["SKEW"],
+                                  vx["VIX 9D"], vx["VIX 3M"]))
+
+    mcols = st.columns(3)
+    for col, (label, df, fmt) in zip(
+            mcols,
+            [("VIX", vm["VIX"], "{:.1f}"),
+             ("VVIX", vx["VVIX"], "{:.0f}"),
+             ("SKEW", vx["SKEW"], "{:.0f}")]):
+        with col:
+            if df.empty:
+                st.metric(label, "n/a")
+                continue
+            st.metric(label, fmt.format(float(df["close"].iloc[-1])))
+
+    if not vm["VIX"].empty:
         st.plotly_chart(line_chart(vm["VIX"].tail(252), "VIX — 1 year",
                                    {"SMA 50": sma(vm["VIX"]["close"], 50).tail(252)}),
                         use_container_width=True)
@@ -307,32 +324,46 @@ with tabs[2]:
                  ("complacent (<15)" if vix < 15 else
                   "normal (15–20)" if vix < 20 else
                   "elevated (20–30)" if vix < 30 else "panic (>30)"))
-    with c2:
-        st.plotly_chart(line_chart(vm["DXY (USD Index)"].tail(252), "DXY — USD strength, 1 year",
-                                   {"SMA 50": sma(vm["DXY (USD Index)"]["close"], 50).tail(252)}),
+
+    if not vx["VVIX"].empty:
+        st.plotly_chart(line_chart(vx["VVIX"].tail(252), "VVIX — volatility of VIX, 1 year",
+                                   {"SMA 50": sma(vx["VVIX"]["close"], 50).tail(252)}),
                         use_container_width=True)
-    c3, c4 = st.columns(2)
-    with c3:
-        y10 = vm["US 10Y Yield"].tail(252)["close"]
-        y5 = vm["US 5Y Yield"].tail(252)["close"]
+        vv = float(vx["VVIX"]["close"].iloc[-1])
+        st.write(f"**VVIX {vv:.0f}** — " +
+                 ("elevated (>120): heavy demand for volatility protection" if vv > 120 else
+                  "subdued (<80): little demand for crash protection" if vv < 80 else
+                  "in its normal range (80–120)"))
+
+    if not vx["SKEW"].empty:
+        st.plotly_chart(line_chart(vx["SKEW"].tail(252), "SKEW — tail-risk pricing, 1 year",
+                                   {"SMA 50": sma(vx["SKEW"]["close"], 50).tail(252)}),
+                        use_container_width=True)
+        sk = float(vx["SKEW"]["close"].iloc[-1])
+        st.write(f"**SKEW {sk:.0f}** — " +
+                 ("elevated (≥135): downside protection is expensive" if sk >= 135 else
+                  "calm (≤115): downside protection is cheap" if sk <= 115 else
+                  "middling: tail fear neither stretched nor complacent"))
+
+    v9d, v3m = vx["VIX 9D"], vx["VIX 3M"]
+    if not v9d.empty and not v3m.empty and not vm["VIX"].empty:
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=y10.index, y=y10, name="10Y"))
-        fig.add_trace(go.Scatter(x=y5.index, y=y5, name="5Y"))
-        fig.update_layout(title="US Treasury yields — 1 year", height=320,
+        for s, name in [(v9d.tail(252)["close"], "VIX 9D"),
+                        (vm["VIX"].tail(252)["close"], "VIX 30D"),
+                        (v3m.tail(252)["close"], "VIX 3M")]:
+            fig.add_trace(go.Scatter(x=s.index, y=s, name=name))
+        fig.update_layout(title="VIX term structure — 1 year", height=320,
                           margin=dict(t=40, b=10))
         st.plotly_chart(fig, use_container_width=True)
-    with c4:
-        spread = (vm["US 10Y Yield"]["close"] - vm["US 5Y Yield"]["close"]).tail(252)
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=spread.index, y=spread, name="10Y − 5Y",
-                                 fill="tozeroy"))
-        fig.add_hline(y=0, line_dash="dash", line_color="red")
-        fig.update_layout(title="Yield curve (10Y − 5Y spread) — 1 year",
-                          height=320, margin=dict(t=40, b=10))
-        st.plotly_chart(fig, use_container_width=True)
-        last_spread = float(spread.iloc[-1])
-        st.write(f"**Spread {last_spread:+.2f}pp** — " +
-                 ("inverted ⚠️" if last_spread < 0 else "normal"))
+        l9, l30, l3 = (float(v9d["close"].iloc[-1]),
+                       float(vm["VIX"]["close"].iloc[-1]),
+                       float(v3m["close"].iloc[-1]))
+        shape = ("backwardation ⚠️ — near-term fear exceeds longer-term expectations"
+                 if l9 > l30 else
+                 "flat — no strong near-vs-far fear signal"
+                 if abs(l3 - l9) < 1.0 else
+                 "contango — the normal upward-sloping vol curve")
+        st.write(f"**{l9:.1f} / {l30:.1f} / {l3:.1f}** (9D / 30D / 3M) — {shape}")
 
 # ---------------- ECONOMY (FRED API) ----------------
 with tabs[3]:
@@ -463,6 +494,16 @@ with tabs[3]:
             dict.fromkeys(list(FR.ECON_SERIES) +
                           [sid for sid, _yrs in FR.YIELD_CURVE_SERIES.values()])) +
             ". Source: FRED API, Federal Reserve Bank of St. Louis.")
+
+    st.subheader("USD strength — DXY")
+    st.caption("Yahoo Finance (DX-Y.NYB) — 1 year.")
+    if vm["DXY (USD Index)"].empty:
+        st.warning("DXY data unavailable.")
+    else:
+        st.plotly_chart(line_chart(vm["DXY (USD Index)"].tail(252), "DXY — 1 year",
+                                   {"SMA 50": sma(vm["DXY (USD Index)"]["close"], 50).tail(252)}),
+                        use_container_width=True)
+        st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
 
 # ---------------- SECTOR ROTATION ----------------
 with tabs[4]:

@@ -40,6 +40,14 @@ CROSS_ASSETS = {
     "Gold": "GC=F",
     "20Y+ Treasury (TLT)": "TLT",
 }
+
+# Extra volatility gauges for the Volatility tab (free Yahoo CBOE indices)
+VOL_EXTRA = {
+    "VVIX": "^VVIX",      # vol-of-vol: expected volatility of VIX itself
+    "SKEW": "^SKEW",      # tail-risk pricing (100 = normal)
+    "VIX 9D": "^VIX9D",   # 9-day VIX for the short end of the term structure
+    "VIX 3M": "^VIX3M",   # 3-month VIX for the long end of the term structure
+}
 GROWTH_SECTORS = {"Technology", "Cons. Disc."}
 HAVEN_SECTORS = {"Utilities", "Cons. Staples"}
 

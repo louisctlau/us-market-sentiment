@@ -108,6 +108,63 @@ def yield_commentary(y10_df: pd.DataFrame, y5_df: pd.DataFrame) -> str:
             f"({lo:.2f}–{hi:.2f}%), {trend}{chg_txt}.{spread_txt} {read}")
 
 
+def volatility_overview(vix_df: pd.DataFrame, vvix_df: pd.DataFrame,
+                        skew_df: pd.DataFrame, vix9d_df: pd.DataFrame,
+                        vix3m_df: pd.DataFrame) -> str:
+    """One-paragraph read across the vol complex: VIX level, vol-of-vol,
+    tail-risk pricing, and term-structure shape. Thresholds documented inline."""
+    v = vix_df["close"].dropna() if vix_df is not None else pd.Series(dtype=float)
+    if v.empty:
+        return "Volatility data unavailable."
+    last = float(v.iloc[-1])
+    pr = _pct_rank(v)
+    chg = pct_change(vix_df, 21)
+    lvl = ("complacent" if last < 15 else "normal" if last < 20
+           else "elevated" if last < 30 else "panic")
+    bits = [f"VIX {last:.1f} ({lvl}) sits in the {_ord(int(round(pr)))} percentile "
+            f"of its 1-year range"
+            + (f", {chg:+.0f}% over the past month." if chg is not None else ".")]
+
+    # VVIX (vol-of-vol): typically 70–110; >120 = heavy demand for VIX options,
+    # i.e. traders paying up for volatility protection.
+    vv = vvix_df["close"].dropna() if vvix_df is not None and not vvix_df.empty else pd.Series(dtype=float)
+    if not vv.empty:
+        vl = float(vv.iloc[-1])
+        vv_read = ("elevated — traders are paying up for volatility protection"
+                   if vl > 120 else
+                   "subdued — little demand for crash protection"
+                   if vl < 80 else "in its normal range")
+        bits.append(f"VVIX {vl:.0f} is {vv_read}.")
+
+    # SKEW: 100 = baseline; >=135 = downside protection is expensive (tail fear);
+    # <=115 = complacent tail pricing.
+    sk = skew_df["close"].dropna() if skew_df is not None and not skew_df.empty else pd.Series(dtype=float)
+    if not sk.empty:
+        sl = float(sk.iloc[-1])
+        sk_read = ("elevated — downside protection is expensive"
+                   if sl >= 135 else
+                   "calm — downside protection is cheap"
+                   if sl <= 115 else "middling")
+        bits.append(f"SKEW {sl:.0f}: tail-risk pricing is {sk_read}.")
+
+    # Term structure: normal = contango (9D < 30D < 3M); 9D > 30D (backwardation)
+    # means near-term fear exceeds longer-term expectations — classic stress.
+    def _last(df):
+        s = df["close"].dropna() if df is not None and not df.empty else None
+        return float(s.iloc[-1]) if s is not None and not s.empty else None
+
+    v9, v3 = _last(vix9d_df), _last(vix3m_df)
+    if v9 is not None and v3 is not None:
+        shape = ("in backwardation — near-term fear exceeds longer-term expectations"
+                 if v9 > last else
+                 "flat — no strong near-vs-far fear signal"
+                 if abs(v3 - v9) < 1.0 else
+                 "in contango — the normal upward-sloping vol curve")
+        bits.append(f"The VIX term structure ({v9:.1f} / {last:.1f} / {v3:.1f} for "
+                    f"9D / 30D / 3M) is {shape}.")
+    return " ".join(bits)
+
+
 def market_commentary(ctx: dict) -> str:
     """Overall market take: regime, what supports it, and the single major risk.
 
