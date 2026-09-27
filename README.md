@@ -6,15 +6,22 @@ rotation, headline risk, and the US economic calendar.
 
 ## How it works
 
-A composite **0–100 sentiment score** (100 = most bullish) blends five components:
+A composite **0–100 sentiment score** (100 = most bullish) blends seven components
+(the headline number is the **3-day average** of the daily score, so one volatile
+session can't swing it):
 
 | Component | Weight | What it measures |
 |---|---|---|
-| Trend | 25% | Share of indices above their 50-day average |
-| Momentum | 20% | Average RSI(14), mapped 30→0 / 50→50 / 70→100 |
-| Volatility | 20% | VIX level inverted (12→100, 40→0), minus spike penalty |
-| Macro | 15% | DXY vs 50-day + 10Y–5Y yield curve shape |
-| Sectors | 20% | Offensive vs defensive 1-month return spread |
+| Trend | 20% | Share of indices above 50-day avg (70%) + RSP/SPY breadth vs 50d (30%) |
+| Momentum | 15% | Average RSI(14), mapped 30→0 / 50→50 / 70→100 |
+| Volatility | 15% | 1y percentiles (inverted) of VIX / VVIX / SKEW / MOVE + VX futures curve shape; −15 on a 5d VIX spike >20% |
+| Credit | 10% | HYG/LQD 5y percentile + ICE BofA HY OAS percentile (inverted) |
+| Macro | 15% | DXY vs 50d (continuous) + 10Y–2Y spread + Sahm rule distance from the 0.50 trigger |
+| Sectors | 15% | Offensive–defensive 1M spread, z-scored vs its trailing 6M volatility |
+| Positioning | 10% | Inverted Fear Context + Risk-Off Rotation gauges (no longer decorative) |
+
+Every sleeve degrades to neutral 50 when its data is missing, and weights are
+re-normalized over what's available — a failed feed can't tank the composite.
 
 Regimes: ≥70 Risk-On · 45–70 Neutral · 25–45 Risk-Off · <25 Extreme Fear.
 

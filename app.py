@@ -3,6 +3,7 @@ yields, technicals, sector rotation, headline risk, economic calendar."""
 from __future__ import annotations
 
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 from datetime import datetime, timezone
@@ -42,13 +43,28 @@ def load_data():
     vx = fetch_all(VOL_EXTRA, period="1y")
     sec = fetch_all(SECTORS, period="6mo")
     xa = fetch_all(CROSS_ASSETS, period="1y")
-    return idx, vm, vx, sec, xa, datetime.now(timezone.utc)
+    br = fetch_all({"RSP (Equal-Weight S&P)": "RSP"}, period="1y")
+    return idx, vm, vx, sec, xa, br, datetime.now(timezone.utc)
 
 
 @st.cache_data(ttl=6 * 3600)
 def load_credit_5y():
     return fetch_all({k: CROSS_ASSETS[k] for k in ("High-Yield (HYG)", "Inv-Grade (LQD)")},
                      period="5y")
+
+
+@st.cache_data(ttl=6 * 3600)
+def load_score_fred():
+    """FRED series the sentiment score needs. Independent of the Macro tab's
+    strict loader: one dead series is skipped, a missing key yields {} —
+    every consumer degrades to neutral 50."""
+    out = {}
+    for sid in ("DGS2", "UNRATE", "BAMLH0A0HYM2"):
+        try:
+            out[sid] = FR.get_series(sid, observation_start="2020-01-01")
+        except Exception:
+            continue
+    return out
 
 
 @st.cache_data(ttl=900)
@@ -167,9 +183,11 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
     return fig
 
 
-idx, vm, vx, sec, xa, data_ts = load_data()
+idx, vm, vx, sec, xa, br, data_ts = load_data()
 vx_fut, vx_fut_asof, vx_fut_err = load_vix_futures()
-failed = sorted({name for group in (idx, vm, vx, sec, xa)
+sfred = load_score_fred()
+cr5y = load_credit_5y()
+failed = sorted({name for group in (idx, vm, vx, sec, xa, br)
                  for name, df in group.items() if df.empty})
 if failed:
     st.warning(f"Data unavailable for: {', '.join(failed)} — "
@@ -181,16 +199,52 @@ with col_btn:
     if st.button("↻ Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
+def _cut(df, n):
+    """Truncate a frame by n trailing rows (lagged score recomputation).
+    Returns the full frame when there isn't enough history to lag."""
+    if n and df is not None and not df.empty and len(df) > n + 20:
+        return df.iloc[:-n]
+    return df
 
-components = {
-    "Trend": S.trend_score(snaps),
-    "Momentum": S.momentum_score(snaps),
-    "Volatility": S.volatility_score(vm["VIX"]),
-    "Macro": S.macro_score(vm["DXY (USD Index)"], vm["US 10Y Yield"], vm["US 5Y Yield"]),
-    "Sectors": S.sector_score(sec),
-}
-score, breakdown = S.composite(components)
+
+def build_components(n=0):
+    """Full component set as of n trading days ago (n=0 → today)."""
+    idx_n = {k: _cut(v, n) for k, v in idx.items()}
+    vm_n = {k: _cut(v, n) for k, v in vm.items()}
+    vx_n = {k: _cut(v, n) for k, v in vx.items()}
+    sec_n = {k: _cut(v, n) for k, v in sec.items()}
+    snaps = {k: technical_snapshot(v) for k, v in idx_n.items() if not v.empty}
+    rsp = _cut(br["RSP (Equal-Weight S&P)"], n)
+    spx = idx_n["S&P 500"]
+    breadth = ((rsp["close"] / spx["close"]).dropna()
+               if not rsp.empty and not spx.empty else None)
+    hyg_n = _cut(cr5y["High-Yield (HYG)"], n)
+    lqd_n = _cut(cr5y["Inv-Grade (LQD)"], n)
+    oas = (_cut(sfred["BAMLH0A0HYM2"], n)["value"]
+           if "BAMLH0A0HYM2" in sfred else None)
+    dgs2 = _cut(sfred["DGS2"], n)["value"] if "DGS2" in sfred else None
+    unrate = _cut(sfred["UNRATE"], n)["value"] if "UNRATE" in sfred else None
+    fear_n = S.fear_context(vm_n["VIX"], idx_n["S&P 500"])
+    rot_n = S.risk_off_rotation(sec_n, _cut(xa["20Y+ Treasury (TLT)"], n))
+    return {
+        "Trend": S.trend_score(snaps, breadth),
+        "Momentum": S.momentum_score(snaps),
+        "Volatility": S.volatility_score(vm_n["VIX"], vx_n.get("VVIX"),
+                                         vx_n.get("SKEW"), vx_n.get("MOVE"),
+                                         vx_fut),
+        "Credit": S.credit_score(hyg_n, lqd_n, oas),
+        "Macro": S.macro_score(vm_n["DXY (USD Index)"], vm_n["US 10Y Yield"],
+                               dgs2, unrate),
+        "Sectors": S.sector_score(sec_n),
+        "Positioning": S.positioning_score(fear_n, rot_n),
+    }
+
+
+components = build_components(0)
+score_today, breakdown = S.composite(components)
+# Headline is the 3-day average — one volatile session can't swing it 10+ points.
+past = [S.composite(build_components(n))[0] for n in (1, 2)]
+score = float(np.mean([score_today, *past]))
 
 fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
 rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
@@ -217,8 +271,10 @@ with tabs[0]:
                  "Weight": f"{int(S.WEIGHTS[k]*100)}%", "Detail": v["detail"]}
                 for k, v in breakdown.items()]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        st.caption("100 = most bullish. Weights: Trend 25%, Momentum 20%, "
-                   "Volatility 20%, Macro 15%, Sectors 20%.")
+        st.caption("100 = most bullish. Headline is the 3-day average "
+                   f"(today {score_today:.1f}). Weights: Trend 20%, Momentum 15%, "
+                   "Volatility 15%, Credit 10%, Macro 15%, Sectors 15%, "
+                   "Positioning 10%.")
 
     st.subheader("Market commentary")
     ctx = {
@@ -324,12 +380,13 @@ with tabs[2]:
                                   hyg_df=xa["High-Yield (HYG)"],
                                   lqd_df=xa["Inv-Grade (LQD)"]))
 
-    mcols = st.columns(3)
+    mcols = st.columns(4)
     for col, (label, df, fmt) in zip(
             mcols,
             [("VIX", vm["VIX"], "{:.1f}"),
              ("VVIX", vx["VVIX"], "{:.0f}"),
-             ("SKEW", vx["SKEW"], "{:.0f}")]):
+             ("SKEW", vx["SKEW"], "{:.0f}"),
+             ("MOVE", vx["MOVE"], "{:.0f}")]):
         with col:
             if df.empty:
                 st.metric(label, "n/a")
@@ -365,6 +422,16 @@ with tabs[2]:
                  ("elevated (≥135): downside protection is expensive" if sk >= 135 else
                   "calm (≤115): downside protection is cheap" if sk <= 115 else
                   "middling: tail fear neither stretched nor complacent"))
+
+    if not vx["MOVE"].empty:
+        st.plotly_chart(line_chart(vx["MOVE"].tail(252), "MOVE — bond-market volatility, 1 year",
+                                   {"SMA 50": sma(vx["MOVE"]["close"], 50).tail(252)}),
+                        use_container_width=True)
+        mv = float(vx["MOVE"]["close"].iloc[-1])
+        st.write(f"**MOVE {mv:.0f}** — " +
+                 ("stressed (≥140): bond volatility pricing real rates risk" if mv >= 140 else
+                  "calm (≤80): rates volatility subdued" if mv <= 80 else
+                  "normal: no acute stress in rates markets"))
 
     v9d, v3m = vx["VIX 9D"], vx["VIX 3M"]
     if not v9d.empty and not v3m.empty and not vm["VIX"].empty:

@@ -49,6 +49,7 @@ VOL_EXTRA = {
     "SKEW": "^SKEW",      # tail-risk pricing (100 = normal)
     "VIX 9D": "^VIX9D",   # 9-day VIX for the short end of the term structure
     "VIX 3M": "^VIX3M",   # 3-month VIX for the long end of the term structure
+    "MOVE": "^MOVE",      # bond-market volatility (Merrill Lynch Option Volatility Estimate)
 }
 GROWTH_SECTORS = {"Technology", "Cons. Disc."}
 HAVEN_SECTORS = {"Utilities", "Cons. Staples"}
