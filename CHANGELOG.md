@@ -1,12 +1,6 @@
-## 2026-09-28 — Top tab bar restored (synced with sidebar)
-- The top tab bar is back: a segmented tab strip under the dashboard title,
-  two-way synced with the sidebar menu — clicking either one switches the page
-  and updates the other.
-- Sidebar menu (10 pages + Changelog pinned at the bottom) is unchanged.
-
-## 2026-09-28 — Sidebar navigation
-- Tabs replaced with a collapsible left-sidebar menu: Overview, Indices, Volatility, Macro, Sector Rotation, News Risk, Economic Calendar, Earnings, GEX, Fed Watch.
-- Changelog link pinned to the bottom of the sidebar.
+## 2026-09-28 — Navigation reverted to tabs
+- Rolled back the sidebar-menu experiment (and the synced top tab bar): the app
+  is tab-based again, exactly as before, with the Changelog link under the title.
 
 ## 2026-09-28 — Keep-alive ping
 - `.github/workflows/keep_alive.yml`: pings the app every 2 days at 5am ET so Streamlit Community Cloud never sleeps it (7-day inactivity threshold).

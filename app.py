@@ -31,47 +31,14 @@ from src.news import fetch_headlines, risk_meter
 from src.technicals import rsi, sma, technical_snapshot
 from src.vix_futures import fetch_vix_futures_curve
 
-st.set_page_config(page_title="US Market Sentiment", layout="wide",
-                   initial_sidebar_state="expanded")
-PAGES = ["Overview", "Indices", "Volatility", "Macro",
-         "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
-         "GEX", "Fed Watch"]
-if "page" not in st.session_state:
-    st.session_state.page = PAGES[0]
-
-
-def _nav_from_sidebar():
-    st.session_state.page = st.session_state._sb
-    st.session_state.pop("_tb", None)
-
-
-def _nav_from_tabbar():
-    st.session_state.page = st.session_state._tb
-    st.session_state.pop("_sb", None)
-
-
-st.markdown(
-    "<style>"
-    "[data-testid='stSidebarNav']{display:none;}"  # native nav off; custom menu below
-    "[data-testid='stSidebarUserContent']{display:flex;flex-direction:column;}"
-    ".sidebar-spacer{flex:1 1 auto;min-height:3rem;}"
-    "</style>",
-    unsafe_allow_html=True)
-st.sidebar.title("US Market Sentiment")
-st.sidebar.radio("Menu", PAGES, index=PAGES.index(st.session_state.page),
-                 key="_sb", on_change=_nav_from_sidebar,
-                 label_visibility="collapsed")
-st.sidebar.markdown('<div class="sidebar-spacer"></div>', unsafe_allow_html=True)
-st.sidebar.divider()
-st.sidebar.page_link("pages/changelog.py", label="Changelog")
-
+st.set_page_config(page_title="US Market Sentiment", layout="wide")
+# Sidebar nav is hidden: the app is tab-based, and the changelog page is
+# reached via the link under the title.
+st.markdown("<style>[data-testid='stSidebarNav']{display:none;}</style>",
+            unsafe_allow_html=True)
 st.title("US Market Sentiment Dashboard")
 st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals, sectors, headlines, calendar")
-# Top tab bar — two-way synced with the sidebar menu above.
-st.segmented_control("Section", PAGES, default=st.session_state.page,
-                     key="_tb", on_change=_nav_from_tabbar,
-                     label_visibility="collapsed")
-page = st.session_state.page
+st.page_link("pages/changelog.py", label="Changelog")
 
 
 @st.cache_data(ttl=900)
@@ -291,8 +258,12 @@ snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
 headlines, news_err, news_ts = load_news()
 headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
 
+tabs = st.tabs(["Overview", "Indices", "Volatility", "Macro",
+                "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
+                "GEX", "Fed Watch"])
+
 # ---------------- OVERVIEW ----------------
-if page == "Overview":
+with tabs[0]:
     c1, c2 = st.columns([1, 2])
     with c1:
         st.plotly_chart(gauge(score, "Composite Sentiment"), use_container_width=True)
@@ -377,7 +348,7 @@ if page == "Overview":
                    f"{r1m:+.1f}% 1M" if r1m is not None else "")
 
 # ---------------- INDICES ----------------
-if page == "Indices":
+with tabs[1]:
     for name, df in idx.items():
         if df.empty:
             continue
@@ -407,7 +378,7 @@ if page == "Indices":
             ]), use_container_width=True, hide_index=True)
 
 # ---------------- VOLATILITY ----------------
-if page == "Volatility":
+with tabs[2]:
     st.subheader("Volatility overview")
     st.info(C.volatility_overview(vm["VIX"], vx["VVIX"], vx["SKEW"],
                                   vx["VIX 9D"], vx["VIX 3M"],
@@ -573,7 +544,7 @@ if page == "Volatility":
             )
 
 # ---------------- MACRO (FRED API) ----------------
-if page == "Macro":
+with tabs[3]:
     st.subheader("US Macro — FRED")
     st.caption("Official macro series via the FRED API "
                "(Federal Reserve Bank of St. Louis).")
@@ -758,7 +729,7 @@ if page == "Macro":
         st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
 
 # ---------------- SECTOR ROTATION ----------------
-if page == "Sector Rotation":
+with tabs[4]:
     perf = []
     for name, df in sec.items():
         if df.empty:
@@ -801,7 +772,7 @@ HEADLINE_RISK_BANDS = [
     ("80–100 · Severe", 80, 100, "#e74c3c"),
 ]
 
-if page == "News Risk":
+with tabs[5]:
     if news_err:
         st.warning(f"News feed unavailable: {news_err}")
     elif headlines:
@@ -843,7 +814,7 @@ if page == "News Risk":
         st.info("No headlines right now.")
 
 # ---------------- ECONOMIC CALENDAR ----------------
-if page == "Economic Calendar":
+with tabs[6]:
     events, err = load_calendar()
     if err:
         st.warning(f"Calendar feed unavailable: {err}")
@@ -890,7 +861,7 @@ if page == "Economic Calendar":
         st.info("No events found.")
 
 # ---------------- EARNINGS ----------------
-if page == "Earnings":
+with tabs[7]:
     earnings, err = load_earnings()
     if err:
         st.warning(f"Earnings feed unavailable: {err}")
@@ -906,7 +877,7 @@ if page == "Earnings":
         st.info("No notable earnings in the next 7 days.")
 
 # ---------------- GEX ----------------
-if page == "GEX":
+with tabs[8]:
     st.subheader("Gamma exposure (GEX)")
     st.caption("Dealer gamma positioning from listed option chains — SPY/QQQ/IWM "
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
@@ -939,7 +910,7 @@ if page == "GEX":
                "Assumes dealers long calls / short puts: positive = long gamma "
                "(dampens), negative = short gamma (amplifies). [gex-v5]")
 
-if page == "Fed Watch":
+with tabs[9]:
     st.subheader("Fed Watch — rate probabilities")
     st.caption("Market-implied odds of Fed moves at upcoming FOMC meetings, "
                "stripped from 30-day Fed Funds futures (CME ZQ).")
