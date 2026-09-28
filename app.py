@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from src import commentary as C
@@ -67,11 +67,49 @@ def market_status(now=None):
 st.set_page_config(page_title="US Market Sentiment", layout="wide")
 # Sidebar nav is hidden: the app is tab-based, and the changelog page is
 # reached via the link under the title.
-st.markdown("<style>[data-testid='stSidebarNav']{display:none;}</style>",
-            unsafe_allow_html=True)
+st.markdown(
+    "<style>"
+    "[data-testid='stSidebarNav']{display:none;}"  # tab-based app; sidebar is the catalysts panel
+    "[data-testid='stSidebarUserContent']{display:flex;flex-direction:column;}"
+    ".sidebar-spacer{flex:1 1 auto;min-height:2rem;}"
+    "</style>",
+    unsafe_allow_html=True)
 st.title("US Market Sentiment Dashboard")
 st.caption(market_status())
 st.page_link("pages/changelog.py", label="Changelog")
+
+# ---- Sidebar: upcoming catalysts countdown ----
+# CPI/payrolls dates verified at bls.gov/schedule/2026; FOMC mirrors
+# F.MEETINGS. Extend these lists as new schedules publish.
+_CPI_DATES = [date(2026, 10, 14), date(2026, 11, 10), date(2026, 12, 10)]
+_PAYROLLS_DATES = [date(2026, 10, 2), date(2026, 11, 6), date(2026, 12, 4)]
+
+
+def _next_catalysts(today):
+    out = []
+    fomc = [d for d, _ in F.MEETINGS if d >= today]
+    if fomc:
+        out.append(("FOMC decision", fomc[0]))
+    cpi = [d for d in _CPI_DATES if d >= today]
+    if cpi:
+        out.append(("CPI", cpi[0]))
+    nfp = [d for d in _PAYROLLS_DATES if d >= today]
+    if nfp:
+        out.append(("Non-farm payrolls", nfp[0]))
+    out.sort(key=lambda x: x[1])
+    return out
+
+
+st.sidebar.subheader("Upcoming catalysts")
+_today = datetime.now(ZoneInfo("America/Toronto")).date()
+for _name, _d in _next_catalysts(_today):
+    _n = (_d - _today).days
+    _when = "today" if _n == 0 else "tomorrow" if _n == 1 else f"in {_n}d"
+    st.sidebar.markdown(f"**{_name}**<br>{_d.strftime('%a %b %d')} · {_when}",
+                        unsafe_allow_html=True)
+st.sidebar.markdown('<div class="sidebar-spacer"></div>', unsafe_allow_html=True)
+st.sidebar.divider()
+st.sidebar.page_link("pages/changelog.py", label="Changelog")
 
 
 @st.cache_data(ttl=900)

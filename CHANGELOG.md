@@ -1,3 +1,8 @@
+## 2026-09-28 — Sidebar catalyst countdown
+- The sidebar now shows an "Upcoming catalysts" panel: countdowns to the next
+  FOMC decision, CPI, and non-farm payrolls (BLS dates verified; FOMC mirrors
+  the Fed Watch schedule), with the Changelog link pinned at the bottom.
+
 ## 2026-09-28 — Market status caption
 - The subtitle under the dashboard title now shows live NYSE session status
   (🟢 Market open · 🟡 Pre-market / After-hours · 🔴 Market closed), with
