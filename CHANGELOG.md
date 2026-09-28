@@ -1,3 +1,7 @@
+## 2026-09-28 — View counter removed
+- The footer view counter is gone (per Louis's call): fixed footer bar, `src/views.py`, and `data/view_count.txt` all removed. The Upstash setup is no longer needed.
+- Changelog moved to a native `st.page_link` under the dashboard title (visible on every tab) — this also fixes the old raw `/changelog` href, which never routed on Streamlit Cloud. The changelog page got a matching native "← Back to dashboard" link.
+
 ## 2026-09-28 — Cumulative view counter (Upstash Redis)
 - The footer view counter no longer resets on redeploy: it now increments an atomic counter in Upstash Redis (free tier), falling back to the file counter only when Redis isn't configured.
 - Setup needed: add `[upstash_redis]` rest_url + rest_token to Streamlit secrets (or env vars locally). Until then the footer keeps the previous ephemeral behavior.
