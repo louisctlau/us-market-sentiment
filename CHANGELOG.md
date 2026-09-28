@@ -1,3 +1,6 @@
+## 2026-09-28 — Keep-alive ping
+- `.github/workflows/keep_alive.yml`: pings the app every 2 days at 5am ET so Streamlit Community Cloud never sleeps it (7-day inactivity threshold).
+
 ## 2026-09-28 — Economic calendar filters
 - Every column now has a filter: Date / Time / Impact multiselects plus Event / Forecast / Previous text search, with a "Showing X of N events" count.
 
