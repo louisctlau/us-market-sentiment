@@ -2,6 +2,7 @@
 - The footer view counter no longer resets on redeploy: it now increments an atomic counter in Upstash Redis (free tier), falling back to the file counter only when Redis isn't configured.
 - Setup needed: add `[upstash_redis]` rest_url + rest_token to Streamlit secrets (or env vars locally). Until then the footer keeps the previous ephemeral behavior.
 - Note: counts from before this change are unrecoverable — the old file counter reset with every deploy, so the durable total starts fresh when Redis is connected.
+- Seeded at 80 (Louis's best guess of total views to date) via `seed_views`: applied once with SETNX, never overwrites the live count.
 
 ## 2026-09-28 — News Risk engine v2 (negation/verb-aware + VADER)
 - Headline classifier rebuilt: negation handling ("recession fears ease", "avoids default" no longer flag as risk), verb-aware nouns ("deal signed" bullish vs "deal collapses" high risk; bare "deal" neutral), net scoring across all keyword hits instead of first-match-wins, and Fed/CPI/payrolls treated as neutral context.
