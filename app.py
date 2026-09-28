@@ -820,29 +820,22 @@ with tabs[6]:
         st.warning(f"Calendar feed unavailable: {err}")
     elif events:
         st.subheader(f"US economic calendar — next 7 days ({len(events)})")
-        # Per-column filters.
-        f1, f2, f3 = st.columns(3)
-        f4, f5, f6 = st.columns(3)
-        dates = sorted({e["date"] for e in events})
-        times = sorted({e["time_et"] for e in events})
+        # Streamlined filters: one search box (matches date, time, event,
+        # forecast, previous) + impact selector.
+        fs, fi = st.columns([3, 1])
+        q = fs.text_input("Search events", placeholder="e.g. FOMC, CPI, payrolls…",
+                          key="cal_q", label_visibility="collapsed")
         impacts = sorted({e["impact"] for e in events})
-        sel_dates = f1.multiselect("Date", dates, default=dates,
-                                   key="cal_f_date")
-        sel_times = f2.multiselect("Time (ET)", times, default=times,
-                                   key="cal_f_time")
-        sel_impacts = f3.multiselect("Impact", impacts, default=impacts,
-                                     key="cal_f_impact")
-        q_event = f4.text_input("Event contains", key="cal_f_event")
-        q_forecast = f5.text_input("Forecast contains", key="cal_f_forecast")
-        q_previous = f6.text_input("Previous contains", key="cal_f_prev")
+        sel_impacts = fi.multiselect("Impact", impacts, default=impacts,
+                                     key="cal_f_impact",
+                                     label_visibility="collapsed",
+                                     placeholder="Impact")
+        ql = q.lower()
         filtered = [
             e for e in events
-            if e["date"] in sel_dates
-            and e["time_et"] in sel_times
-            and e["impact"] in sel_impacts
-            and q_event.lower() in e["event"].lower()
-            and q_forecast.lower() in e["forecast"].lower()
-            and q_previous.lower() in e["previous"].lower()
+            if e["impact"] in sel_impacts
+            and (not ql or ql in f"{e['date']} {e['time_et']} {e['event']} "
+                                f"{e['forecast']} {e['previous']}".lower())
         ]
         st.caption(f"Showing {len(filtered)} of {len(events)} events.")
         rows = [{"Date": e["date"], "Time": e["time_et"], "Event": e["event"],

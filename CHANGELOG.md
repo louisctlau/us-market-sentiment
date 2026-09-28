@@ -2,6 +2,10 @@
 - Rolled back the sidebar-menu experiment (and the synced top tab bar): the app
   is tab-based again, exactly as before, with the Changelog link under the title.
 
+## 2026-09-28 — Streamlined calendar filters
+- The six per-column filter widgets are now one search box (matches date, time,
+  event, forecast, previous) plus an Impact selector, in a single row.
+
 ## 2026-09-28 — Keep-alive ping
 - `.github/workflows/keep_alive.yml`: pings the app every 2 days at 5am ET so Streamlit Community Cloud never sleeps it (7-day inactivity threshold).
 
