@@ -1,3 +1,6 @@
+## 2026-09-28 — Economic calendar filters
+- Every column now has a filter: Date / Time / Impact multiselects plus Event / Forecast / Previous text search, with a "Showing X of N events" count.
+
 ## 2026-09-28 — View counter removed
 - The footer view counter is gone (per Louis's call): fixed footer bar, `src/views.py`, and `data/view_count.txt` all removed. The Upstash setup is no longer needed.
 - Changelog moved to a native `st.page_link` under the dashboard title (visible on every tab) — this also fixes the old raw `/changelog` href, which never routed on Streamlit Cloud. The changelog page got a matching native "← Back to dashboard" link.
