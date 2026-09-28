@@ -1,3 +1,7 @@
+## 2026-09-28 — Sidebar navigation
+- Tabs replaced with a collapsible left-sidebar menu: Overview, Indices, Volatility, Macro, Sector Rotation, News Risk, Economic Calendar, Earnings, GEX, Fed Watch.
+- Changelog link pinned to the bottom of the sidebar.
+
 ## 2026-09-28 — Keep-alive ping
 - `.github/workflows/keep_alive.yml`: pings the app every 2 days at 5am ET so Streamlit Community Cloud never sleeps it (7-day inactivity threshold).
 

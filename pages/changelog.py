@@ -6,7 +6,7 @@ from pathlib import Path
 import streamlit as st
 
 st.set_page_config(page_title="Changelog — US Market Sentiment", layout="wide")
-# Sidebar nav stays hidden for the tabbed UX; navigation is via page links.
+# Sidebar nav stays hidden; navigation is the custom sidebar menu in app.py.
 st.markdown("<style>[data-testid='stSidebarNav']{display:none;}</style>",
             unsafe_allow_html=True)
 
