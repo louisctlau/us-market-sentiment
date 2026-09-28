@@ -36,6 +36,20 @@ st.set_page_config(page_title="US Market Sentiment", layout="wide",
 PAGES = ["Overview", "Indices", "Volatility", "Macro",
          "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
          "GEX", "Fed Watch"]
+if "page" not in st.session_state:
+    st.session_state.page = PAGES[0]
+
+
+def _nav_from_sidebar():
+    st.session_state.page = st.session_state._sb
+    st.session_state.pop("_tb", None)
+
+
+def _nav_from_tabbar():
+    st.session_state.page = st.session_state._tb
+    st.session_state.pop("_sb", None)
+
+
 st.markdown(
     "<style>"
     "[data-testid='stSidebarNav']{display:none;}"  # native nav off; custom menu below
@@ -44,13 +58,20 @@ st.markdown(
     "</style>",
     unsafe_allow_html=True)
 st.sidebar.title("US Market Sentiment")
-page = st.sidebar.radio("Menu", PAGES, label_visibility="collapsed")
+st.sidebar.radio("Menu", PAGES, index=PAGES.index(st.session_state.page),
+                 key="_sb", on_change=_nav_from_sidebar,
+                 label_visibility="collapsed")
 st.sidebar.markdown('<div class="sidebar-spacer"></div>', unsafe_allow_html=True)
 st.sidebar.divider()
 st.sidebar.page_link("pages/changelog.py", label="Changelog")
 
 st.title("US Market Sentiment Dashboard")
 st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals, sectors, headlines, calendar")
+# Top tab bar — two-way synced with the sidebar menu above.
+st.segmented_control("Section", PAGES, default=st.session_state.page,
+                     key="_tb", on_change=_nav_from_tabbar,
+                     label_visibility="collapsed")
+page = st.session_state.page
 
 
 @st.cache_data(ttl=900)

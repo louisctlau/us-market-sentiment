@@ -1,3 +1,9 @@
+## 2026-09-28 — Top tab bar restored (synced with sidebar)
+- The top tab bar is back: a segmented tab strip under the dashboard title,
+  two-way synced with the sidebar menu — clicking either one switches the page
+  and updates the other.
+- Sidebar menu (10 pages + Changelog pinned at the bottom) is unchanged.
+
 ## 2026-09-28 — Sidebar navigation
 - Tabs replaced with a collapsible left-sidebar menu: Overview, Indices, Volatility, Macro, Sector Rotation, News Risk, Economic Calendar, Earnings, GEX, Fed Watch.
 - Changelog link pinned to the bottom of the sidebar.
