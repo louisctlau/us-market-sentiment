@@ -834,8 +834,10 @@ with tabs[5]:
                 f"{segs}</div>", unsafe_allow_html=True)
             st.caption("Severity scale: 0 = calm, 100 = maximum headline risk.")
             st.caption(detail)
-            st.caption("Keyword-based: high-risk words (crash, tariff, war…), "
-                       "medium (Fed, CPI, inflation…), bullish words reduce risk.")
+            st.caption("Negation- and verb-aware keywords + VADER sentiment, "
+                       "net-scored per headline. 'Deal'/'tariff' scored by "
+                       "context ('deal signed' vs 'deal collapses'); Fed/CPI "
+                       "are neutral context.")
         with c2:
             for h in headlines:
                 badge = {"high": "🔴", "medium": "🟡", "low": "⚪",

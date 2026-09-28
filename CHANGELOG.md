@@ -1,3 +1,7 @@
+## 2026-09-28 — News Risk engine v2 (negation/verb-aware + VADER)
+- Headline classifier rebuilt: negation handling ("recession fears ease", "avoids default" no longer flag as risk), verb-aware nouns ("deal signed" bullish vs "deal collapses" high risk; bare "deal" neutral), net scoring across all keyword hits instead of first-match-wins, and Fed/CPI/payrolls treated as neutral context.
+- VADER sentiment blended in (negative sentiment adds to risk) to catch what keywords miss. Tested 24 tricky headlines: 22/24 correct vs 12/24 for the old engine.
+
 ## 2026-09-27 — Sentiment score rebuilt (7 components)
 - Score now blends seven components: Trend 20%, Momentum 15%, Volatility 15%, Credit 10% (new), Macro 15%, Sectors 15%, Positioning 10% (new).
 - Headline is a 3-day moving average; the daily value shows in the detail table.

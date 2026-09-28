@@ -5,3 +5,4 @@ pandas>=2.0
 numpy>=1.26
 requests>=2.31
 curl-cffi>=0.7  # realistic TLS fingerprint for FRED downloads (fedwatch.py)
+vaderSentiment>=3.3.2  # headline sentiment for News Risk tab (src/news.py)
