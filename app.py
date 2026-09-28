@@ -31,13 +31,46 @@ from src.news import fetch_headlines, risk_meter
 from src.technicals import rsi, sma, technical_snapshot
 from src.vix_futures import fetch_vix_futures_curve
 
+# NYSE full-day closures (weekends are handled separately). Extend yearly.
+_NYSE_HOLIDAYS = {
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+    "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+    "2027-01-01", "2027-01-18", "2027-02-15", "2027-04-02", "2027-05-31",
+    "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+}
+# 1:00 PM ET closes (day after Thanksgiving, Christmas Eve).
+_NYSE_EARLY_CLOSE = {"2026-11-27", "2026-12-24", "2027-11-26"}
+
+
+def market_status(now=None):
+    """NYSE session status for the dashboard caption."""
+    et = ZoneInfo("America/Toronto")
+    now = now or datetime.now(et)
+    d = now.strftime("%Y-%m-%d")
+    t = now.hour + now.minute / 60 + now.second / 3600
+    if now.weekday() >= 5 or d in _NYSE_HOLIDAYS:
+        return "🔴 Market closed"
+    if d in _NYSE_EARLY_CLOSE:
+        return ("🟢 Market open · early close 1:00 PM ET" if t < 13.0
+                else "🔴 Market closed · early close 1:00 PM ET")
+    if t < 4.0:
+        return "🔴 Market closed"
+    if t < 9.5:
+        return "🟡 Pre-market · opens 9:30 AM ET"
+    if t < 16.0:
+        return "🟢 Market open · closes 4:00 PM ET"
+    if t < 20.0:
+        return "🟡 After-hours"
+    return "🔴 Market closed"
+
+
 st.set_page_config(page_title="US Market Sentiment", layout="wide")
 # Sidebar nav is hidden: the app is tab-based, and the changelog page is
 # reached via the link under the title.
 st.markdown("<style>[data-testid='stSidebarNav']{display:none;}</style>",
             unsafe_allow_html=True)
 st.title("US Market Sentiment Dashboard")
-st.caption("S&P 500 · Nasdaq · Russell 2000 — volatility, macro, technicals, sectors, headlines, calendar")
+st.caption(market_status())
 st.page_link("pages/changelog.py", label="Changelog")
 
 

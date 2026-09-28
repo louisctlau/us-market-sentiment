@@ -1,3 +1,8 @@
+## 2026-09-28 — Market status caption
+- The subtitle under the dashboard title now shows live NYSE session status
+  (🟢 Market open · 🟡 Pre-market / After-hours · 🔴 Market closed), with
+  regular, early-close, weekend, and holiday hours handled.
+
 ## 2026-09-28 — Navigation reverted to tabs
 - Rolled back the sidebar-menu experiment (and the synced top tab bar): the app
   is tab-based again, exactly as before, with the Changelog link under the title.
