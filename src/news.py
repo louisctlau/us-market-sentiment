@@ -81,7 +81,9 @@ VERB_AWARE: dict[str, tuple[frozenset, frozenset, float, float, float]] = {
     ),
     "tariff": (
         frozenset({"paused", "pause", "delayed", "delay", "eased", "ease",
-                   "lifted", "lift", "deal", "cut", "reduced", "relief"}),
+                   "lifted", "lift", "deal", "cut", "reduced", "relief",
+                   "lower", "lowers", "lowered", "slash", "slashes",
+                   "slashed"}),
         frozenset({"impose", "imposes", "imposed", "hits", "hit",
                    "threatens", "threaten", "escalates", "escalate",
                    "war", "hike", "hiked", "raised", "raise"}),
