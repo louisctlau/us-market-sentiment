@@ -1,23 +1,32 @@
-"""File-based page view counter.
+"""Page view counter: one view per browser session.
 
-Counts one view per browser session (guarded by st.session_state, so
-reruns don't inflate it). The count lives in data/view_count.txt.
+Primary backend: Upstash Redis (free tier) via its REST API — durable and
+cumulative across redeploys, unlike Streamlit Cloud's ephemeral filesystem.
+Configure with either Streamlit secrets::
 
-Caveat: Streamlit Cloud's filesystem is ephemeral — redeploys and
-long idle stretches reboot the container, resetting the counter to
-whatever value is committed in the repo. Good enough for a rough
-readership signal; not analytics-grade.
+    [upstash_redis]
+    rest_url = "https://....upstash.io"
+    rest_token = "..."
+
+or the env vars UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN.
+
+Fallback: the previous file-based counter (data/view_count.txt) when Redis
+isn't configured or unreachable. The file counter resets on redeploy —
+expected, and documented in the footer methodology, not a bug.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+import requests
 import streamlit as st
 
 _COUNT_FILE = Path(__file__).resolve().parent.parent / "data" / "view_count.txt"
+_REDIS_KEY = "usms:views:total"
 
 
-def _increment() -> int:
+def _file_increment() -> int:
     _COUNT_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(_COUNT_FILE, "a+") as f:
         try:
@@ -38,11 +47,39 @@ def _increment() -> int:
         return count
 
 
+def _redis_creds() -> tuple[str | None, str | None]:
+    url = token = None
+    try:
+        cfg = st.secrets.get("upstash_redis", {})
+        url = cfg.get("rest_url")
+        token = cfg.get("rest_token")
+    except Exception:
+        pass  # no secrets configured
+    url = url or os.environ.get("UPSTASH_REDIS_REST_URL")
+    token = token or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+    return (url, token) if url and token else (None, None)
+
+
+def _redis_incr(url: str, token: str) -> int:
+    """Atomic INCR on the Redis key; returns the new cumulative total."""
+    r = requests.post(
+        f"{url.rstrip('/')}/incr/{_REDIS_KEY}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=8,
+    )
+    r.raise_for_status()
+    return int(r.json()["result"])
+
+
 def get_view_count() -> int:
     """Return the total view count, incrementing once per user session."""
     if "_view_count" not in st.session_state:
-        try:
-            st.session_state["_view_count"] = _increment()
-        except OSError:
-            st.session_state["_view_count"] = 0
+        url, token = _redis_creds()
+        if url and token:
+            try:
+                st.session_state["_view_count"] = _redis_incr(url, token)
+            except Exception:
+                st.session_state["_view_count"] = _file_increment()
+        else:
+            st.session_state["_view_count"] = _file_increment()
     return int(st.session_state["_view_count"])
