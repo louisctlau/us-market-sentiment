@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from .data import DEFENSIVE_SECTORS, GROWTH_SECTORS, HAVEN_SECTORS, OFFENSIVE_SECTORS, pct_change
-from .technicals import rsi, sma
+from .technicals import ordinal, rsi, sma
 
 
 def _clip(x: float) -> float:
@@ -107,7 +107,7 @@ def volatility_score(vix_df, vvix_df=None, skew_df=None, move_df=None,
     sleeves = [s for s in sleeves if s is not None]
     score = _blend(sleeves)
     last = float(vix_df["close"].iloc[-1])
-    detail = f"VIX {last:.1f} ({_pct_rank(vix_df['close'].tail(252)):.0f}th pct 1y)"
+    detail = f"VIX {last:.1f} ({ordinal(_pct_rank(vix_df["close"].tail(252)))} pct 1y)"
     spike = pct_change(vix_df, 5)
     if spike is not None and spike > 20:
         score = _clip(score - 15)
@@ -125,12 +125,12 @@ def credit_score(hyg_df, lqd_df, oas: pd.Series | None = None) -> tuple[float, s
         if len(ratio) > 50:
             pr = _pct_rank(ratio)
             sleeves.append((pr, 0.5))
-            notes.append(f"HYG/LQD {pr:.0f}th pct 5y")
+            notes.append(f"HYG/LQD {ordinal(pr)} pct 5y")
     if oas is not None and len(oas.dropna()) > 50:
         o = oas.dropna()
         pr = 100.0 - _pct_rank(o)
         sleeves.append((pr, 0.5))
-        notes.append(f"HY OAS {float(o.iloc[-1]):.2f}% ({100 - pr:.0f}th pct)")
+        notes.append(f"HY OAS {float(o.iloc[-1]):.2f}% ({ordinal(100 - pr)} pct)")
     if not sleeves:
         return 50.0, "credit data unavailable"
     return _blend(sleeves), "; ".join(notes)

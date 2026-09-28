@@ -9,6 +9,14 @@ def sma(series: pd.Series, window: int) -> pd.Series:
     return series.rolling(window).mean()
 
 
+def ordinal(n: int) -> str:
+    """1 -> '1st', 2 -> '2nd', 3 -> '3rd', 43 -> '43rd'."""
+    n = int(n)
+    suffix = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(
+        n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def rsi(close: pd.Series, window: int = 14) -> pd.Series:
     delta = close.diff()
     gain = delta.clip(lower=0).ewm(alpha=1 / window, adjust=False).mean()

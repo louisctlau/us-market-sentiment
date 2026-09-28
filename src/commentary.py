@@ -6,11 +6,11 @@ import numpy as np
 import pandas as pd
 
 from .data import pct_change
-from .technicals import sma
+from .technicals import ordinal, sma
 
 
 def _ord(n: int) -> str:
-    return f"{n}{'th' if 11 <= n % 100 <= 13 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+    return ordinal(n)
 
 
 def _pct_rank(s: pd.Series) -> float:
