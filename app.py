@@ -370,9 +370,22 @@ with tabs[0]:
     st.subheader("Market snapshot")
     cols = st.columns(4)
     for (name, s), col in zip(snaps.items(), cols):
-        arrow = "▲" if (s["ret_1d"] or 0) >= 0 else "▼"
-        col.metric(name, f"{s['last']:,.1f}",
-                   f"{arrow} {s['ret_1d']:+.2f}% today" if s["ret_1d"] is not None else "")
+        # Day-change is rendered as a custom pill, not st.metric's delta:
+        # Streamlit adds its own arrow to string deltas (always up/green),
+        # which produced the doubled "↑ ▼" and wrong color.
+        col.metric(name, f"{s['last']:,.1f}")
+        ret = s["ret_1d"]
+        if ret is not None:
+            up = ret >= 0
+            arrow = "▲" if up else "▼"
+            color = "#3ddc84" if up else "#ff6b6b"
+            bg = "rgba(61,220,132,0.15)" if up else "rgba(255,107,107,0.15)"
+            col.markdown(
+                f"<span style='display:inline-block;padding:0.15rem 0.7rem;"
+                f"border-radius:999px;background:{bg};color:{color};"
+                f"font-weight:600;font-size:0.85rem;'>"
+                f"{arrow} {ret:+.2f}% today</span>",
+                unsafe_allow_html=True)
     mcols = st.columns(3)
     for col, (label, df, fmt) in zip(
             mcols,
