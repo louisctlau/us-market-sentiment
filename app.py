@@ -13,7 +13,7 @@ from src import commentary as C
 from src import fedwatch as F
 from src import fred as FR
 from src import gex as G
-from src import sentiment as S
+from src import sentiment_v2 as S
 from src.econ_calendar import fetch_calendar
 from src.data import (
     CROSS_ASSETS,
@@ -225,15 +225,15 @@ def load_vix_futures():
 
 def gauge(value: float, title: str, color_ranges=True, invert=False,
           steps: list | None = None) -> go.Figure:
-    default_steps = [{"range": [0, 25], "color": "#e74c3c"},
-                     {"range": [25, 45], "color": "#f39c12"},
+    default_steps = [{"range": [0, 30], "color": "#e74c3c"},
+                     {"range": [30, 45], "color": "#f39c12"},
                      {"range": [45, 70], "color": "#f1c40f"},
                      {"range": [70, 100], "color": "#2ecc71"}]
     if invert:  # high = bad (fear, risk-off)
-        default_steps = [{"range": [0, 25], "color": "#2ecc71"},
-                         {"range": [25, 45], "color": "#f1c40f"},
+        default_steps = [{"range": [0, 30], "color": "#2ecc71"},
+                         {"range": [30, 45], "color": "#f1c40f"},
                          {"range": [45, 70], "color": "#f39c12"},
-                         {"range": [70, 100], "color": "#e74c3c"}]
+                         {"range": [70, 100], "color": "#d62728"}]
     steps = default_steps if steps is None else steps
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=value, title={"text": title},
@@ -283,8 +283,12 @@ def _cut(df, n):
     return df
 
 
-def build_components(n=0):
-    """Full component set as of n trading days ago (n=0 → today)."""
+def build_components(n=0, gex=None, fed=None, news_meter=None):
+    """Full component set as of n trading days ago (n=0 → today).
+
+    gex / fed / news_meter are today-only inputs (no history exists);
+    past days score those sleeves neutral. Set gex=None etc. to degrade
+    gracefully when a feed fails."""
     idx_n = {k: _cut(v, n) for k, v in idx.items()}
     vm_n = {k: _cut(v, n) for k, v in vm.items()}
     vx_n = {k: _cut(v, n) for k, v in vx.items()}
@@ -300,34 +304,52 @@ def build_components(n=0):
            if "BAMLH0A0HYM2" in sfred else None)
     dgs2 = _cut(sfred["DGS2"], n)["value"] if "DGS2" in sfred else None
     unrate = _cut(sfred["UNRATE"], n)["value"] if "UNRATE" in sfred else None
-    fear_n = S.fear_context(vm_n["VIX"], idx_n["S&P 500"])
-    rot_n = S.risk_off_rotation(sec_n, _cut(xa["20Y+ Treasury (TLT)"], n))
     return {
         "Trend": S.trend_score(snaps, breadth),
         "Momentum": S.momentum_score(snaps),
         "Volatility": S.volatility_score(vm_n["VIX"], vx_n.get("VVIX"),
                                          vx_n.get("SKEW"), vx_n.get("MOVE"),
-                                         vx_fut),
+                                         vx_fut if n == 0 else None),
         "Credit": S.credit_score(hyg_n, lqd_n, oas),
         "Macro": S.macro_score(vm_n["DXY (USD Index)"], vm_n["US 10Y Yield"],
-                               dgs2, unrate),
+                               dgs2, unrate, fed if n == 0 else None),
         "Sectors": S.sector_score(sec_n),
-        "Positioning": S.positioning_score(fear_n, rot_n),
+        "Positioning": S.positioning_score(gex if n == 0 else None),
+        "News": S.news_score(news_meter if n == 0 else None),
     }
 
 
-components = build_components(0)
+headlines, news_err, news_ts = load_news()
+headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
+
+# Today-only composite inputs: SPY dealer positioning + Fed stance.
+# Failures degrade to neutral sleeves, never crash the score.
+try:
+    spy_gex = load_gex("SPY")
+except Exception:
+    spy_gex = None
+try:
+    fed = S.fed_stance(load_fedwatch()["meetings"])
+except Exception:
+    fed = None
+
+components = build_components(0, gex=spy_gex, fed=fed,
+                              news_meter=headline_meter if headlines else None)
 score_today, breakdown = S.composite(components)
 # Headline is the 3-day average — one volatile session can't swing it 10+ points.
 past = [S.composite(build_components(n))[0] for n in (1, 2)]
 score = float(np.mean([score_today, *past]))
 
+
+@st.cache_data(ttl=3600)
+def composite_history(days: int = 22):
+    """Trailing composite, oldest → newest. Past days use price-based
+    sleeves only (GEX/Fed/news are today-only inputs, neutral before)."""
+    return [S.composite(build_components(n))[0] for n in range(days - 1, -1, -1)]
+
 fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
 rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
 snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
-
-headlines, news_err, news_ts = load_news()
-headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
 
 tabs = st.tabs(["Overview", "Indices", "Volatility", "Macro",
                 "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
@@ -342,6 +364,17 @@ with tabs[0]:
         color = {"Risk-On": "green", "Neutral": "gray", "Risk-Off": "orange",
                  "Extreme Fear": "red"}[reg]
         st.markdown(f"### :{color}[{reg}]")
+        hist = composite_history()
+        hdates = idx["S&P 500"].index[-len(hist):]
+        sfig = go.Figure(go.Scatter(x=hdates, y=hist, mode="lines",
+                                    line=dict(color="#1f77b4", width=2),
+                                    name="Composite"))
+        sfig.add_hline(y=50, line_dash="dot", line_color="#888")
+        sfig.update_layout(title="Past month", height=200,
+                           margin=dict(t=30, b=10, l=10, r=10),
+                           yaxis=dict(range=[0, 100]), xaxis_title="",
+                           yaxis_title="")
+        st.plotly_chart(sfig, use_container_width=True)
     with c2:
         st.subheader("What drives the score")
         rows = [{"Component": k, "Score": round(v["score"], 1),
@@ -349,9 +382,9 @@ with tabs[0]:
                 for k, v in breakdown.items()]
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         st.caption("100 = most bullish. Headline is the 3-day average "
-                   f"(today {score_today:.1f}). Weights: Trend 20%, Momentum 15%, "
-                   "Volatility 15%, Credit 10%, Macro 15%, Sectors 15%, "
-                   "Positioning 10%.")
+                   f"(today {score_today:.1f}). Weights: " +
+                   ", ".join(f"{k} {int(w * 100)}%"
+                             for k, w in S.WEIGHTS.items()) + ".")
 
     st.subheader("Market commentary")
     ctx = {

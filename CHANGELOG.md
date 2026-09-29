@@ -1,3 +1,23 @@
+## 2026-09-29 — Composite sentiment: backtested, restructured
+- Backtested the composite daily over 2015–2026 (2,952 trading days): median
+  58.7, std 13.1. The score printed below 30 at the Mar 2020, Dec 2018, and
+  Aug 2024 panics, so Extreme Fear is now <30 (was <25). Honest finding: no
+  component predicts forward returns — the composite describes the current
+  regime, and is contrarian at extremes (sub-25 readings averaged +2.2% over
+  the next 20 sessions).
+- Positioning is now genuine dealer positioning from the GEX tab (SPY
+  zero-gamma distance + net GEX sign). The old version was a VIX/rotation
+  remix that correlated 0.79 with Momentum and double-counted Volatility
+  and Sectors.
+- News Risk is now an 8th composite sleeve (5%, taken from Momentum's old
+  15% — Momentum correlated 0.77 with Trend). Macro adds a Fed stance sleeve
+  (nearest-FOMC cut vs hike odds).
+- Volatility spike penalty is now continuous (+10%/5d → 0, +50%/5d → −20)
+  instead of a −15 cliff at +20%. Credit percentiles use a matched 3y window
+  (OAS history is truncated). Sector z-score has a 1pp vol floor so calm
+  markets can't pin it at 0/100 on noise.
+- Overview adds a past-month composite sparkline under the gauge.
+
 ## 2026-09-29 — Economic calendar: actuals with green/red highlights
 - The calendar now runs on Nasdaq's economic calendar feed (no key), showing an
   Actual column next to Forecast and Previous for every event.

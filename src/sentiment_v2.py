@@ -109,56 +109,87 @@ def volatility_score(vix_df, vvix_df=None, skew_df=None, move_df=None,
     last = float(vix_df["close"].iloc[-1])
     detail = f"VIX {last:.1f} ({ordinal(_pct_rank(vix_df["close"].tail(252)))} pct 1y)"
     spike = pct_change(vix_df, 5)
-    if spike is not None and spike > 20:
-        score = _clip(score - 15)
-        detail += f" (+{spike:.0f}% in 5d — spike penalty)"
+    if spike is not None and spike > 10:
+        # Continuous penalty — no cliff: +10%/5d -> 0, +50%/5d -> -20.
+        penalty = _clip((spike - 10) / 40 * 20)
+        score = _clip(score - penalty)
+        detail += f" (+{spike:.0f}% in 5d — spike penalty -{penalty:.0f})"
     return score, detail
 
 
 def credit_score(hyg_df, lqd_df, oas: pd.Series | None = None) -> tuple[float, str]:
     """Credit stress: HYG/LQD 5y percentile (rising = risk appetite) and
     ICE BofA HY option-adjusted spread percentile, inverted (wide = fear).
-    FRED only carries ~3y of OAS history (licence change, Apr 2026)."""
+
+    Percentiles use a matched 3y window: FRED only carries ~3y of OAS
+    history (licence change, Apr 2026), so a 5y window on the ratio would
+    not be comparable. Caveat: HYG is shorter-duration than LQD, so the
+    ratio also moves with rate expectations (yields down -> LQD
+    outperforms -> ratio falls) — not pure credit risk appetite."""
+    LOOKBACK = 756  # ~3 trading years
     sleeves, notes = [], []
     if not _is_empty(hyg_df) and not _is_empty(lqd_df):
-        ratio = (hyg_df["close"] / lqd_df["close"]).dropna()
+        ratio = (hyg_df["close"] / lqd_df["close"]).dropna().tail(LOOKBACK)
         if len(ratio) > 50:
             pr = _pct_rank(ratio)
             sleeves.append((pr, 0.5))
-            notes.append(f"HYG/LQD {ordinal(pr)} pct 5y")
+            notes.append(f"HYG/LQD {ordinal(pr)} pct 3y")
     if oas is not None and len(oas.dropna()) > 50:
-        o = oas.dropna()
+        o = oas.dropna().tail(LOOKBACK)
         pr = 100.0 - _pct_rank(o)
         sleeves.append((pr, 0.5))
-        notes.append(f"HY OAS {float(o.iloc[-1]):.2f}% ({ordinal(100 - pr)} pct)")
+        notes.append(f"HY OAS {float(o.iloc[-1]):.2f}% ({ordinal(100 - pr)} pct 3y)")
     if not sleeves:
         return 50.0, "credit data unavailable"
     return _blend(sleeves), "; ".join(notes)
 
 
+def fed_stance(meetings: list[dict] | None) -> dict | None:
+    """Nearest-meeting P(cut)/P(hold)/P(hike) from fedwatch buckets.
+
+    Takes fedwatch()["meetings"]; buckets map 25bp-move units -> probability.
+    Returns None when no meeting data (sleeve degrades gracefully)."""
+    if not meetings:
+        return None
+    m = meetings[0]
+    b = m.get("buckets") or {}
+    return {"p_cut": sum(p for k, p in b.items() if k < 0),
+            "p_hold": float(b.get(0, 0.0)),
+            "p_hike": sum(p for k, p in b.items() if k > 0),
+            "date": m.get("date")}
+
+
 def macro_score(dxy_df, y10_df, dgs2: pd.Series | None = None,
-                unrate: pd.Series | None = None) -> tuple[float, str]:
+                unrate: pd.Series | None = None,
+                fed: dict | None = None) -> tuple[float, str]:
     """Macro backdrop: USD vs 50d (continuous — falling dollar = risk-on),
-    10Y–2Y curve spread (±1pp → 0/100), and the Sahm rule (0.00 → 100,
-    0.50 trigger → 0, linear)."""
+    10Y–2Y curve spread (±1pp → 0/100), the Sahm rule (0.00 → 100,
+    0.50 trigger → 0, linear), and the Fed stance sleeve: futures-implied
+    P(cut) vs P(hike) at the nearest FOMC meeting (easing = bullish)."""
     sleeves, notes = [], []
     if not _is_empty(dxy_df):
         d = dxy_df["close"].dropna()
         ma50 = sma(d, 50).iloc[-1]
         if len(d) > 50 and not np.isnan(ma50) and ma50 != 0:
             dev = (d.iloc[-1] / ma50 - 1) * 100
-            sleeves.append((_clip(50 - dev / 2 * 50), 0.4))
+            sleeves.append((_clip(50 - dev / 2 * 50), 0.35))
             notes.append(f"DXY {dev:+.2f}% vs 50d")
     if not _is_empty(y10_df) and dgs2 is not None and len(dgs2.dropna()) > 0:
         spread = float(y10_df["close"].iloc[-1]) - float(dgs2.dropna().iloc[-1])
-        sleeves.append((_clip(50 + spread * 50), 0.3))
+        sleeves.append((_clip(50 + spread * 50), 0.25))
         notes.append(f"10Y–2Y {spread:+.2f}pp")
     if unrate is not None and len(unrate.dropna()) >= 12:
         u = unrate.dropna()
         u3m = u.rolling(3).mean()
         sahm = float(u3m.iloc[-1] - u3m.tail(12).min())
-        sleeves.append((_clip((0.50 - sahm) / 0.50 * 100), 0.3))
+        sleeves.append((_clip((0.50 - sahm) / 0.50 * 100), 0.25))
         notes.append(f"Sahm {sahm:.2f}pp")
+    if fed is not None:
+        lean = fed["p_cut"] - fed["p_hike"]  # +1 = fully priced cut
+        sleeves.append((_clip(50 + lean * 50), 0.15))
+        dstr = fed["date"].strftime("%b %d") if fed.get("date") else "next FOMC"
+        notes.append(f"Fed {dstr}: cut {fed['p_cut'] * 100:.0f}% / "
+                     f"hike {fed['p_hike'] * 100:.0f}%")
     if not sleeves:
         return 50.0, "macro data unavailable"
     return _blend(sleeves), "; ".join(notes)
@@ -184,18 +215,56 @@ def sector_score(sector_data: dict[str, object]) -> tuple[float, str]:
         return 50.0, "insufficient sector history"
     now = float(spread_1m.iloc[-1])
     vol = float(spread_1m.std())
+    # 1pp floor on trailing vol: in calm markets a tiny absolute tilt must
+    # not z-score into a pinned 0/100 on noise.
+    vol = max(vol, 0.01)
     z = now / vol if vol > 0 else 0.0
     score = _clip(50 + z / 2 * 50)  # z = ±2 → 0/100
     tilt = "offensive" if now > 0 else "defensive"
     return score, f"{tilt} tilt ({now:+.2f}pp 1M, z={z:+.1f})"
 
 
-def positioning_score(fear: tuple[float, str],
-                      rotation: tuple[float, str]) -> tuple[float, str]:
-    """Folds the Overview's Fear Context and Risk-Off Rotation gauges into the
-    composite (both are 0-100, high = bad → inverted)."""
-    score = _clip(100 - 0.5 * fear[0] - 0.5 * rotation[0])
-    return score, f"fear {fear[0]:.0f} / rotation {rotation[0]:.0f} (inverted)"
+def positioning_score(gex: dict | None) -> tuple[float, str]:
+    """Dealer gamma positioning, 0-100 (100 = supportive). Genuine
+    positioning input from the GEX tab's SPY chain snapshot — replaces the
+    old fear/rotation remix, which double-counted VIX (Volatility) and
+    sector rotation (Sectors).
+
+    - Flip distance: (spot - zero_gamma)/spot. Far above the flip level =
+      dealers long gamma into weakness (dampens selloffs); below it =
+      short gamma (accelerates moves). +/-2.5% maps to 0/100.
+    - Net GEX sign: positive = dealers long gamma (dampens moves, 65);
+      negative = short gamma (amplifies moves, 35). Magnitude is left
+      unscaled — no long history exists to calibrate it against.
+    Missing GEX -> neutral 50."""
+    if not gex:
+        return 50.0, "GEX unavailable"
+    sleeves, notes = [], []
+    zg = gex.get("zero_gamma")
+    spot = gex.get("spot")
+    if zg and spot:
+        dist = (spot - zg) / spot
+        sleeves.append((_clip(50 + dist / 0.025 * 50), 0.6))
+        notes.append(f"{dist * 100:+.1f}% vs zero-gamma")
+    t = gex.get("total_net")
+    if t is not None:
+        sleeves.append((65.0 if t > 0 else 35.0, 0.4))
+        notes.append(f"net GEX ${t:+.0f}M/pt")
+    if not sleeves:
+        return 50.0, "GEX data incomplete"
+    return _blend(sleeves), "; ".join(notes)
+
+
+def news_score(headline_meter: float | None) -> tuple[float, str]:
+    """Headline risk as a composite sleeve: high news risk = bearish.
+
+    Uses the News Risk tab's v2 engine (negation- and verb-aware). A small
+    sleeve lets geopolitical shocks move the composite even when
+    price-based components haven't reacted yet. No headline history
+    exists, so past days score neutral 50."""
+    if headline_meter is None:
+        return 50.0, "no headlines"
+    return _clip(100.0 - headline_meter), f"headline risk {headline_meter:.0f}/100"
 
 
 def fear_context(vix_df, spx_df) -> tuple[float, str]:
@@ -235,17 +304,20 @@ def risk_off_rotation(sector_data: dict, tlt_df) -> tuple[float, str]:
 
 
 def regime(score: float) -> str:
+    # Calibrated on the 2015-2026 daily backtest (see
+    # workspace/research/sentiment_backtest/): <30 marks the three panic
+    # episodes (Mar 2020, Dec 2018, Aug 2024); 70 ~= 90th percentile.
     if score >= 70:
         return "Risk-On"
     if score >= 45:
         return "Neutral"
-    if score >= 25:
+    if score >= 30:
         return "Risk-Off"
     return "Extreme Fear"
 
 
-WEIGHTS = {"Trend": 0.20, "Momentum": 0.15, "Volatility": 0.15, "Credit": 0.10,
-           "Macro": 0.15, "Sectors": 0.15, "Positioning": 0.10}
+WEIGHTS = {"Trend": 0.20, "Momentum": 0.10, "Volatility": 0.15, "Credit": 0.10,
+           "Macro": 0.15, "Sectors": 0.15, "Positioning": 0.10, "News": 0.05}
 
 
 def composite(components: dict[str, tuple[float, str]]) -> tuple[float, dict]:
