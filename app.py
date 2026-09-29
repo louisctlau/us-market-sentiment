@@ -915,17 +915,22 @@ with tabs[6]:
                                      label_visibility="collapsed",
                                      placeholder="Impact")
         ql = q.lower()
+        # .get() with defaults: never crash if a cached older event payload
+        # (e.g. from a previous deploy) lacks the newer keys.
         filtered = [
             e for e in events
-            if e["impact"] in sel_impacts
-            and (not ql or ql in f"{e['date']} {e['time_et']} {e['event']} "
-                                f"{e['forecast']} {e['previous']} {e['actual']}".lower())
+            if e.get("impact") in sel_impacts
+            and (not ql or ql in f"{e.get('date', '')} {e.get('time_et', '')} "
+                                f"{e.get('event', '')} {e.get('forecast', '—')} "
+                                f"{e.get('previous', '—')} {e.get('actual', '—')}".lower())
         ]
         st.caption(f"Showing {len(filtered)} of {len(events)} events.")
         verdicts = [e.get("verdict") for e in filtered]
-        rows = [{"Date": e["date"], "Time": e["time_et"], "Event": e["event"],
-                 "Impact": e["impact"], "Forecast": e["forecast"],
-                 "Previous": e["previous"], "Actual": e["actual"]}
+        rows = [{"Date": e.get("date", ""), "Time": e.get("time_et", ""),
+                 "Event": e.get("event", ""), "Impact": e.get("impact", ""),
+                 "Forecast": e.get("forecast", "—"),
+                 "Previous": e.get("previous", "—"),
+                 "Actual": e.get("actual", "—")}
                 for e in filtered]
         cdf = pd.DataFrame(rows)
         def highlight(row):
