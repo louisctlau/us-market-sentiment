@@ -903,9 +903,9 @@ with tabs[6]:
     if err:
         st.warning(f"Calendar feed unavailable: {err}")
     elif events:
-        st.subheader(f"US economic calendar — next 7 days ({len(events)})")
+        st.subheader(f"US economic calendar — this week + next 7 days ({len(events)})")
         # Streamlined filters: one search box (matches date, time, event,
-        # forecast, previous) + impact selector.
+        # forecast, previous, actual) + impact selector.
         fs, fi = st.columns([3, 1])
         q = fs.text_input("Search events", placeholder="e.g. FOMC, CPI, payrolls…",
                           key="cal_q", label_visibility="collapsed")
@@ -919,21 +919,33 @@ with tabs[6]:
             e for e in events
             if e["impact"] in sel_impacts
             and (not ql or ql in f"{e['date']} {e['time_et']} {e['event']} "
-                                f"{e['forecast']} {e['previous']}".lower())
+                                f"{e['forecast']} {e['previous']} {e['actual']}".lower())
         ]
         st.caption(f"Showing {len(filtered)} of {len(events)} events.")
+        verdicts = [e.get("verdict") for e in filtered]
         rows = [{"Date": e["date"], "Time": e["time_et"], "Event": e["event"],
                  "Impact": e["impact"], "Forecast": e["forecast"],
-                 "Previous": e["previous"]} for e in filtered]
+                 "Previous": e["previous"], "Actual": e["actual"]}
+                for e in filtered]
         cdf = pd.DataFrame(rows)
         def highlight(row):
-            color = {"High": "#e74c3c", "Medium": "#f39c12"}.get(row["Impact"], "")
-            return [f"background-color: {color}33" if color else ""] * len(row)
+            v = verdicts[row.name]
+            icolor = {"High": "#e74c3c", "Medium": "#f39c12"}.get(row["Impact"], "")
+            itint = f"background-color: {icolor}33" if icolor else ""
+            out = []
+            for col in row.index:
+                if col == "Actual" and v == "good":
+                    out.append("background-color: #27ae6055; font-weight: 600")
+                elif col == "Actual" and v == "bad":
+                    out.append("background-color: #e74c3c55; font-weight: 600")
+                else:
+                    out.append(itint)
+            return out
         st.dataframe(cdf.style.apply(highlight, axis=1),
                      use_container_width=True, hide_index=True)
-        st.caption("Source: ForexFactory weekly calendar feed (times ET). "
-                   "Rolling 7-day window — near week's end the feed may cover "
-                   "fewer than 7 days.")
+        st.caption("Source: Nasdaq economic calendar (times ET). Released events "
+                   "stay on the calendar all week — actuals are highlighted "
+                   "🟢 green when better than forecast/previous, 🔴 red when worse.")
     else:
         st.info("No events found.")
 

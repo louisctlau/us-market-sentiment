@@ -1,3 +1,15 @@
+## 2026-09-29 — Economic calendar: actuals with green/red highlights
+- The calendar now runs on Nasdaq's economic calendar feed (no key), showing an
+  Actual column next to Forecast and Previous for every event.
+- Released events stay on the calendar for the whole week instead of
+  disappearing once transpired (window is now Monday → today+7 days).
+- Actuals are highlighted green when better than forecast (or previous, when no
+  forecast is published) and red when worse. The favourable direction is parsed
+  from Nasdaq's own "higher/lower than expected" read, with a keyword fallback
+  (e.g. lower unemployment / lower inflation = favourable).
+- Impact is now tiered by keyword (High/Medium/Low) since Nasdaq doesn't
+  publish impact ratings.
+
 ## 2026-09-28 — Sidebar catalyst countdown
 - The sidebar now shows an "Upcoming catalysts" panel: countdowns to the next
   FOMC decision, CPI, and non-farm payrolls (BLS dates verified; FOMC mirrors
