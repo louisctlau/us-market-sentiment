@@ -79,10 +79,13 @@ st.caption(market_status())
 st.page_link("pages/changelog.py", label="Changelog")
 
 # ---- Sidebar: upcoming catalysts countdown ----
-# CPI/payrolls dates verified at bls.gov/schedule/2026; FOMC mirrors
-# F.MEETINGS. Extend these lists as new schedules publish.
+# CPI/payrolls dates verified at bls.gov/schedule/2026; PCE (Personal
+# Income and Outlays) at bea.gov/news/schedule; FOMC mirrors F.MEETINGS.
+# Extend these lists as new schedules publish.
 _CPI_DATES = [date(2026, 10, 14), date(2026, 11, 10), date(2026, 12, 10)]
 _PAYROLLS_DATES = [date(2026, 10, 2), date(2026, 11, 6), date(2026, 12, 4)]
+_PCE_DATES = [date(2026, 9, 30), date(2026, 10, 29), date(2026, 11, 25),
+              date(2026, 12, 23)]
 
 
 def _next_catalysts(today):
@@ -93,6 +96,9 @@ def _next_catalysts(today):
     cpi = [d for d in _CPI_DATES if d >= today]
     if cpi:
         out.append(("CPI", cpi[0]))
+    pce = [d for d in _PCE_DATES if d >= today]
+    if pce:
+        out.append(("PCE", pce[0]))
     nfp = [d for d in _PAYROLLS_DATES if d >= today]
     if nfp:
         out.append(("Non-farm payrolls", nfp[0]))
