@@ -81,7 +81,9 @@ st.page_link("pages/changelog.py", label="Changelog")
 # ---- Sidebar: upcoming catalysts countdown ----
 # CPI/payrolls dates verified at bls.gov/schedule/2026; PCE (Personal
 # Income and Outlays) at bea.gov/news/schedule; FOMC mirrors F.MEETINGS.
-# Extend these lists as new schedules publish.
+# Release times: BLS and BEA reports hit at 8:30 AM ET; the FOMC statement
+# at 2:00 PM ET (press conference 2:30 PM). Extend these lists as new
+# schedules publish.
 _CPI_DATES = [date(2026, 10, 14), date(2026, 11, 10), date(2026, 12, 10)]
 _PAYROLLS_DATES = [date(2026, 10, 2), date(2026, 11, 6), date(2026, 12, 4)]
 _PCE_DATES = [date(2026, 9, 30), date(2026, 10, 29), date(2026, 11, 25),
@@ -92,26 +94,26 @@ def _next_catalysts(today):
     out = []
     fomc = [d for d, _ in F.MEETINGS if d >= today]
     if fomc:
-        out.append(("FOMC decision", fomc[0]))
+        out.append(("FOMC decision", fomc[0], "2:00 PM ET"))
     cpi = [d for d in _CPI_DATES if d >= today]
     if cpi:
-        out.append(("CPI", cpi[0]))
+        out.append(("CPI", cpi[0], "8:30 AM ET"))
     pce = [d for d in _PCE_DATES if d >= today]
     if pce:
-        out.append(("PCE", pce[0]))
+        out.append(("PCE", pce[0], "8:30 AM ET"))
     nfp = [d for d in _PAYROLLS_DATES if d >= today]
     if nfp:
-        out.append(("Non-farm payrolls", nfp[0]))
+        out.append(("Non-farm payrolls", nfp[0], "8:30 AM ET"))
     out.sort(key=lambda x: x[1])
     return out
 
 
 st.sidebar.subheader("Upcoming catalysts")
 _today = datetime.now(ZoneInfo("America/Toronto")).date()
-for _name, _d in _next_catalysts(_today):
+for _name, _d, _t in _next_catalysts(_today):
     _n = (_d - _today).days
     _when = "today" if _n == 0 else "tomorrow" if _n == 1 else f"in {_n}d"
-    st.sidebar.markdown(f"**{_name}**<br>{_d.strftime('%a %b %d')} · {_when}",
+    st.sidebar.markdown(f"**{_name}**<br>{_d.strftime('%a %b %d')} · {_t} · {_when}",
                         unsafe_allow_html=True)
 st.sidebar.markdown('<div class="sidebar-spacer"></div>', unsafe_allow_html=True)
 st.sidebar.divider()
