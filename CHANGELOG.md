@@ -1,3 +1,14 @@
+## 2026-09-30 — Catalyst sidebar: release times
+- Each upcoming catalyst now shows its release time: 8:30 AM ET for PCE,
+  payrolls, and CPI (BLS/BEA release convention); 2:00 PM ET for the FOMC
+  decision (statement; Chair press conference 2:30 PM).
+
+## 2026-09-29 — PCE joins the catalyst sidebar
+- The "Upcoming catalysts" panel now tracks PCE (Personal Income and Outlays)
+  alongside payrolls, CPI, and the FOMC decision — the Fed's 2% target is
+  defined in PCE terms, so it has the better claim than a single inflation
+  gauge.
+
 ## 2026-09-29 — Composite sentiment: backtested, restructured
 - Backtested the composite daily over 2015–2026 (2,952 trading days): median
   58.7, std 13.1. The score printed below 30 at the Mar 2020, Dec 2018, and
