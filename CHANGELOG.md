@@ -1,3 +1,14 @@
+## 2026-10-01 — Risk-Off Rotation switched to Tasty formula
+- Replaced the in-house 1-month rotation gauge with the TastyDayTraders
+  market-intel formula (v0.5.6), reverse-engineered from their published
+  in-page source and independently verified (recomputed their live 38
+  exactly). Score = 50 + 20 × (safe-basket avg − growth-basket avg) on
+  today's day-% change only: growth = QQQ/XLK/SMH/IWM, safe =
+  DIA/XLV/XLP/XLU/XLE/GLD/IEF/SHY/UUP. Label bands: ≥65 RISK-OFF, ≥55
+  leaning risk-off, 45–55 neutral, ≤45 leaning risk-on, ≤35 RISK-ON.
+  The old gauge (21-day XLK+XLY vs XLU+XLP+TLT, ±6pp band) pinned at 0
+  for weeks; the new one is a daily pulse. Caption now reads the day move.
+
 ## 2026-10-01 — Reporting periods on calendar + catalysts
 - Economic calendar events now show the reference period in brackets —
   e.g. "CPI (Sep)", "GDP (Q3)" — derived from each indicator's standard

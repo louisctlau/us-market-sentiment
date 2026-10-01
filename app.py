@@ -20,6 +20,8 @@ from src.data import (
     DEFENSIVE_SECTORS,
     INDICES,
     OFFENSIVE_SECTORS,
+    ROTATION_GROWTH,
+    ROTATION_SAFE,
     SECTORS,
     VOL_EXTRA,
     VOL_MACRO,
@@ -138,7 +140,13 @@ def load_data():
     sec = fetch_all(SECTORS, period="6mo")
     xa = fetch_all(CROSS_ASSETS, period="1y")
     br = fetch_all({"RSP (Equal-Weight S&P)": "RSP"}, period="1y")
-    return idx, vm, vx, sec, xa, br, datetime.now(timezone.utc)
+    # Risk-off rotation baskets (Tasty formula): day-% change only. Reuse the
+    # sector frames already fetched; pull just the 8 non-sector tickers.
+    rot_syms = {**ROTATION_GROWTH, **ROTATION_SAFE}
+    rot_new = fetch_all({k: t for k, t in rot_syms.items() if k not in sec},
+                        period="5d")
+    rot_data = {k: sec[k] if k in sec else rot_new[k] for k in rot_syms}
+    return idx, vm, vx, sec, xa, br, rot_data, datetime.now(timezone.utc)
 
 
 @st.cache_data(ttl=6 * 3600)
@@ -277,7 +285,7 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
     return fig
 
 
-idx, vm, vx, sec, xa, br, data_ts = load_data()
+idx, vm, vx, sec, xa, br, rot_data, data_ts = load_data()
 vx_fut, vx_fut_asof, vx_fut_err = load_vix_futures()
 sfred = load_score_fred()
 cr5y = load_credit_5y()
@@ -366,7 +374,7 @@ def composite_history(days: int = 22):
     return [S.composite(build_components(n))[0] for n in range(days - 1, -1, -1)]
 
 fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
-rot, rot_detail = S.risk_off_rotation(sec, xa["20Y+ Treasury (TLT)"])
+rot, rot_detail = S.risk_off_rotation(rot_data)
 snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
 
 tabs = st.tabs(["Overview", "Indices", "Volatility", "Macro",
@@ -464,7 +472,7 @@ with tabs[0]:
     with f2:
         st.plotly_chart(gauge(rot, "Risk-Off Rotation", invert=True),
                         use_container_width=True)
-        st.caption(f"{rot_detail} — growth → safe-haven flow, 1M.")
+        st.caption(f"{rot_detail} — growth vs safe-haven day move.")
 
     st.subheader("Cross-asset context")
     xa_cols = st.columns(5)

@@ -51,8 +51,16 @@ VOL_EXTRA = {
     "VIX 3M": "^VIX3M",   # 3-month VIX for the long end of the term structure
     "MOVE": "^MOVE",      # bond-market volatility (Merrill Lynch Option Volatility Estimate)
 }
-GROWTH_SECTORS = {"Technology", "Cons. Disc."}
-HAVEN_SECTORS = {"Utilities", "Cons. Staples"}
+# Risk-off rotation baskets — TastyDayTraders market-intel formula (v0.5.6),
+# adopted 2026-10-01. The score uses each name's DAY % change only:
+#   score = 50 + 20 * (safe_avg - growth_avg), rounded, clamped 0-100.
+# (XLE/DIA counted as "safe" is their call, replicated faithfully.)
+ROTATION_GROWTH = {"Nasdaq 100": "QQQ", "Technology": "XLK",
+                   "Semis": "SMH", "Small caps": "IWM"}
+ROTATION_SAFE = {"Dow": "DIA", "Health Care": "XLV", "Cons. Staples": "XLP",
+                 "Utilities": "XLU", "Energy": "XLE", "Gold": "GLD",
+                 "10Y Treasury": "IEF", "2Y Treasury": "SHY",
+                 "US Dollar": "UUP"}
 
 
 def fetch_history(ticker: str, period: str = "1y") -> pd.DataFrame:

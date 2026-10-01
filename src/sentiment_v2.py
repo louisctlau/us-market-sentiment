@@ -14,10 +14,12 @@ Design notes:
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
 
-from .data import DEFENSIVE_SECTORS, GROWTH_SECTORS, HAVEN_SECTORS, OFFENSIVE_SECTORS, pct_change
+from .data import DEFENSIVE_SECTORS, OFFENSIVE_SECTORS, ROTATION_GROWTH, ROTATION_SAFE, pct_change
 from .technicals import ordinal, rsi, sma
 
 
@@ -286,21 +288,28 @@ def fear_context(vix_df, spx_df) -> tuple[float, str]:
     return score, f"VIX {last:.1f} — {label}"
 
 
-def risk_off_rotation(sector_data: dict, tlt_df) -> tuple[float, str]:
-    """Growth -> safe-haven flow, 0 = risk-on … 100 = full risk-off (1M returns)."""
-    growth = [r for n in GROWTH_SECTORS if n in sector_data
-              for r in [pct_change(sector_data[n], 21)] if r is not None]
-    haven = [r for n in HAVEN_SECTORS if n in sector_data
-             for r in [pct_change(sector_data[n], 21)] if r is not None]
-    tlt_r = pct_change(tlt_df, 21)
-    if tlt_r is not None:
-        haven.append(tlt_r)
-    if not growth or not haven:
+def risk_off_rotation(rot_data: dict) -> tuple[float, str]:
+    """TastyDayTraders market-intel formula (v0.5.6): day-% change only.
+
+    0 = risk-on … 100 = rotating to safety (>50 = money moving to safety).
+    Replicates their published app.js exactly, including JS Math.round
+    (half up) semantics and their basket membership.
+    """
+    def _day(name: str) -> float | None:
+        df = rot_data.get(name)
+        return pct_change(df, 1) if df is not None and not df.empty else None
+
+    growth = [r for n in ROTATION_GROWTH if (r := _day(n)) is not None]
+    safe = [r for n in ROTATION_SAFE if (r := _day(n)) is not None]
+    if not growth or not safe:
         return 50.0, "insufficient data"
-    spread = float(np.mean(haven) - np.mean(growth))  # + = rotating to safety
-    score = _clip(50 + spread / 6 * 50)  # +/-6pp maps to 0/100
-    tilt = "risk-off" if spread > 1 else "risk-on" if spread < -1 else "mixed"
-    return score, f"{tilt} flow ({spread:+.1f}pp haven-vs-growth 1M)"
+    g, s = float(np.mean(growth)), float(np.mean(safe))
+    # math.floor(x + 0.5) == JS Math.round for all x; clamp after rounding.
+    score = max(0, min(100, math.floor(50 + (s - g) * 20 + 0.5)))
+    label = ("RISK-OFF" if score >= 65 else "leaning risk-off" if score >= 55
+             else "RISK-ON" if score <= 35 else "leaning risk-on" if score <= 45
+             else "neutral")
+    return float(score), f"{label} (growth {g:+.2f}% vs safe {s:+.2f}% 1D)"
 
 
 def regime(score: float) -> str:
