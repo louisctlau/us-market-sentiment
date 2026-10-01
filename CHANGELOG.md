@@ -1,3 +1,15 @@
+## 2026-10-01 — News Risk: yield-aware + top-10 gauge
+- "Yield" is now verb-aware like "deal"/"tariff": "yields surge/climb" scores
+  as risk (+0.8), "yields ease/fall" as relief (-0.4). Previously the engine
+  only knew the rigid phrase "yields surge", so "surging Treasury yields" and
+  "yields climb to a 24-year high" scored low even as the 10Y hit 5.33%.
+- The Headline Risk gauge now averages the 10 riskiest headlines instead of
+  all 30: most feed items are filler, and the all-headline average
+  structurally capped the gauge on news-sensitive days.
+- Drive-by fix: a verb consumed by the verb-aware branch (e.g. "ease") is no
+  longer re-counted as a negator, so "yields ease" stays bullish instead of
+  flipping back to mild risk. Same latent issue fixed for "tariffs eased".
+
 ## 2026-09-30 — Catalyst sidebar: release times
 - Each upcoming catalyst now shows its release time: 8:30 AM ET for PCE,
   payrolls, and CPI (BLS/BEA release convention); 2:00 PM ET for the FOMC

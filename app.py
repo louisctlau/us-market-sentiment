@@ -926,9 +926,10 @@ with tabs[5]:
             st.caption("Severity scale: 0 = calm, 100 = maximum headline risk.")
             st.caption(detail)
             st.caption("Negation- and verb-aware keywords + VADER sentiment, "
-                       "net-scored per headline. 'Deal'/'tariff' scored by "
-                       "context ('deal signed' vs 'deal collapses'); Fed/CPI "
-                       "are neutral context.")
+                       "net-scored per headline. 'Deal'/'tariff'/'yield' "
+                       "scored by context ('deal signed' vs 'deal collapses', "
+                       "'yields ease' vs 'yields surge'); gauge averages the "
+                       "10 riskiest headlines. Fed/CPI are neutral context.")
         with c2:
             for h in headlines:
                 badge = {"high": "🔴", "medium": "🟡", "low": "⚪",

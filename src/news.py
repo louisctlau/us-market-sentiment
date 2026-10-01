@@ -7,10 +7,12 @@ blended with VADER sentiment.
   - Negation: a keyword hit is flipped/dampened when negators or reversal
     verbs ("no", "not", "avoids", "eases", "fades"...) appear within ±3 words.
     "Recession fears ease" and "avoids default" no longer score as risk.
-  - Verb-aware nouns: "deal", "tariff", "rate cut", "rate hike" are
+  - Verb-aware nouns: "deal", "tariff", "rate cut", "rate hike", "yield" are
     directionless alone, so neighboring verbs decide the sign —
     "deal signed" is bullish, "deal collapses" is high risk, bare "deal"
-    scores 0.
+    scores 0; "yields surge" is risk (+0.8), "yields ease" is relief (-0.4).
+    A verb consumed by this branch is not re-counted as a negator, so
+    "yields ease" stays bullish instead of flipping back to risk.
   - Net scoring: every keyword hit contributes its signed weight instead of
     first-match-wins, so "stocks rally as recession fears fade" nets out
     instead of flagging high risk on "recession" alone.
@@ -18,6 +20,10 @@ blended with VADER sentiment.
     score 0 by themselves; only directional words move the gauge.
   - VADER compound sentiment is blended in at 0.6 weight (negative sentiment
     adds to risk) to catch what the keyword lists miss.
+  - Headline-risk gauge (risk_meter) averages the 10 riskiest headlines,
+    not all headlines: most feed items are filler, and an all-headline
+    average structurally caps the gauge when the market-moving stories run
+    hot.
 """
 from __future__ import annotations
 
@@ -99,6 +105,24 @@ VERB_AWARE: dict[str, tuple[frozenset, frozenset, float, float, float]] = {
         frozenset({"surprise", "unexpected", "aggressive", "shock"}),
         0.5, 0.5, 1.0,
     ),
+    # Bond yields move markets on their own: rising verbs are risk,
+    # easing verbs are relief. Bare "yield" in a headline is mild risk.
+    "yield": (
+        frozenset({"ease", "eases", "eased", "easing",
+                   "fall", "falls", "falling", "fell",
+                   "drop", "drops", "dropping", "dropped",
+                   "retreat", "retreats", "retreating",
+                   "cool", "cools", "cooled", "cooling",
+                   "decline", "declines", "declining"}),
+        frozenset({"surge", "surges", "surging",
+                   "jump", "jumps", "jumping",
+                   "climb", "climbs", "climbing",
+                   "rise", "rises", "rising", "rose",
+                   "spike", "spikes", "spiking",
+                   "hit", "hits", "hitting",
+                   "soar", "soars", "soaring"}),
+        0.3, -0.4, 0.8,
+    ),
 }
 
 # Negators / reversal verbs: flip a nearby keyword hit (checked ±3 words).
@@ -150,17 +174,24 @@ def _find_spans(toks: list[str], phrase: list[str]):
             yield (i, i + n)
 
 
-def _negated(toks: list[str], i: int, j: int) -> bool:
+def _negated(toks: list[str], i: int, j: int,
+             skip: frozenset = frozenset()) -> bool:
     window = toks[max(0, i - 3): j + 3]
-    return any(_weq(t, n) or "n't" in t for t in window for n in NEGATORS)
+    return any((_weq(t, n) or "n't" in t) and t not in skip
+               for t in window for n in NEGATORS)
 
 
-def _apply_negation(w: float, toks: list[str], i: int, j: int) -> tuple[float, bool]:
+def _apply_negation(w: float, toks: list[str], i: int, j: int,
+                    skip: frozenset = frozenset()) -> tuple[float, bool]:
     """Negated hit: flip sign at half magnitude (mild, not full reversal).
 
     A negated zero-weight noun ("no deal") becomes mild risk (+0.3).
+
+    `skip` holds verbs already consumed by the verb-aware branch: a verb
+    like "ease" doubles as a negator, and without the skip "yields ease"
+    would flip from bullish back to risk.
     """
-    if _negated(toks, i, j):
+    if _negated(toks, i, j, skip):
         return (0.3, True) if w == 0 else (-0.5 * w, True)
     return w, False
 
@@ -173,13 +204,15 @@ def _score_hits(title: str) -> tuple[list[tuple[str, float, str]], float]:
     for phrase, (pos_v, neg_v, default, pos_w, neg_w) in VERB_AWARE.items():
         for (i, j) in _find_spans(toks, _tokens(phrase)):
             window = toks[max(0, i - 4): j + 4]
-            if any(w in neg_v for w in window):
-                w, note = neg_w, "verb"
-            elif any(w in pos_v for w in window):
-                w, note = pos_w, "verb"
+            neg_hit = {t for t in window if t in neg_v}
+            pos_hit = {t for t in window if t in pos_v}
+            if neg_hit:
+                w, note, skip = neg_w, "verb", neg_hit
+            elif pos_hit:
+                w, note, skip = pos_w, "verb", pos_hit
             else:
-                w, note = default, ""
-            w, neg = _apply_negation(w, toks, i, j)
+                w, note, skip = default, "", frozenset()
+            w, neg = _apply_negation(w, toks, i, j, skip)
             if neg:
                 note = (note + "+neg" if note else "neg")
             if w != 0:
@@ -228,14 +261,23 @@ def classify_risk(title: str) -> tuple[str, str]:
 
 
 def risk_meter(headlines: list[dict]) -> tuple[float, str]:
-    """0-100 headline-risk gauge (100 = maximum risk)."""
+    """0-100 headline-risk gauge (100 = maximum risk).
+
+    Concentrated on the 10 riskiest headlines: most headlines in a feed
+    are filler, so an all-headline average structurally caps the gauge
+    even when the market-moving stories are hot.
+    """
     if not headlines:
         return 0.0, "no headlines"
     weights = {"high": 1.0, "medium": 0.5, "low": 0.1, "bullish": -0.3}
-    score = sum(weights.get(h.get("risk", "low"), 0.1) for h in headlines)
-    meter = max(0.0, min(100.0, score / len(headlines) * 100))
+    ranked = sorted(
+        (weights.get(h.get("risk", "low"), 0.1) for h in headlines),
+        reverse=True,
+    )
+    top = ranked[:10]
+    meter = max(0.0, min(100.0, sum(top) / len(top) * 100))
     n_high = sum(1 for h in headlines if h.get("risk") == "high")
-    return meter, f"{n_high} high-risk of {len(headlines)} headlines"
+    return meter, f"{n_high} high-risk of {len(headlines)} headlines (top-10)"
 
 
 def _clean(title: str) -> str:
