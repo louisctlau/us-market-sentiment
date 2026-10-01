@@ -75,7 +75,9 @@ st.markdown(
     "</style>",
     unsafe_allow_html=True)
 st.title("US Market Sentiment Dashboard")
-st.caption("Disclaimer: For educational and experimental purposes only. Not investment advice.")
+st.markdown("<span style='color:#ff4b4b;font-size:0.85rem;'>"
+           "Disclaimer: For educational and experimental purposes only. Not investment advice."
+           "</span>", unsafe_allow_html=True)
 st.caption(market_status())
 st.page_link("pages/changelog.py", label="Changelog")
 
