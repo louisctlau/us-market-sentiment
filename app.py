@@ -75,9 +75,7 @@ st.markdown(
     "</style>",
     unsafe_allow_html=True)
 st.title("US Market Sentiment Dashboard")
-st.caption("Disclaimer: This dashboard is for educational and experimental purposes only. "
-           "Investing and trading are inherently risky, please be aware of the risks you are "
-           "assuming before engaging this activity.")
+st.caption("Disclaimer: For educational and experimental purposes only. Not investment advice.")
 st.caption(market_status())
 st.page_link("pages/changelog.py", label="Changelog")
 
