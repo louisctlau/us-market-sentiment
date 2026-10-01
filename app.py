@@ -931,8 +931,9 @@ with tabs[5]:
             st.caption("Negation- and verb-aware keywords + VADER sentiment, "
                        "net-scored per headline. 'Deal'/'tariff'/'yield' "
                        "scored by context ('deal signed' vs 'deal collapses', "
-                       "'yields ease' vs 'yields surge'); gauge averages the "
-                       "10 riskiest headlines. Fed/CPI are neutral context.")
+                       "'yields ease' vs 'yields surge'); gauge weights the "
+                       "3 riskiest headlines (0.55/0.30/0.15, Tasty-style "
+                       "concentration). Fed/CPI are neutral context.")
         with c2:
             for h in headlines:
                 badge = {"high": "🔴", "medium": "🟡", "low": "⚪",

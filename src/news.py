@@ -20,10 +20,10 @@ blended with VADER sentiment.
     score 0 by themselves; only directional words move the gauge.
   - VADER compound sentiment is blended in at 0.6 weight (negative sentiment
     adds to risk) to catch what the keyword lists miss.
-  - Headline-risk gauge (risk_meter) averages the 10 riskiest headlines,
-    not all headlines: most feed items are filler, and an all-headline
-    average structurally caps the gauge when the market-moving stories run
-    hot.
+  - Headline-risk gauge (risk_meter) concentrates on the 3 riskiest
+    headlines — Tasty-style weighted top-3 (0.55/0.30/0.15) — not all
+    headlines: most feed items are filler, and an all-headline average
+    structurally caps the gauge when the market-moving stories run hot.
 """
 from __future__ import annotations
 
@@ -263,9 +263,12 @@ def classify_risk(title: str) -> tuple[str, str]:
 def risk_meter(headlines: list[dict]) -> tuple[float, str]:
     """0-100 headline-risk gauge (100 = maximum risk).
 
-    Concentrated on the 10 riskiest headlines: most headlines in a feed
-    are filler, so an all-headline average structurally caps the gauge
-    even when the market-moving stories are hot.
+    Top-3 concentration, adapted from TastyDayTraders' News Risk:
+    gauge = round(0.55 × riskiest + 0.30 × 2nd + 0.15 × 3rd), capped at
+    100. Concentrating on the top 3 lets the market-moving stories drive
+    the gauge instead of being diluted by filler headlines. With fewer
+    than 3 headlines the weights renormalize (a single headline reads
+    at face value). The 20-pt severity bands are unchanged.
     """
     if not headlines:
         return 0.0, "no headlines"
@@ -274,10 +277,13 @@ def risk_meter(headlines: list[dict]) -> tuple[float, str]:
         (weights.get(h.get("risk", "low"), 0.1) for h in headlines),
         reverse=True,
     )
-    top = ranked[:10]
-    meter = max(0.0, min(100.0, sum(top) / len(top) * 100))
+    base_w = (0.55, 0.30, 0.15)
+    k = min(3, len(ranked))
+    wsum = sum(base_w[:k])
+    meter = round(max(0.0, min(100.0,
+                               sum(base_w[i] / wsum * ranked[i] for i in range(k)) * 100)))
     n_high = sum(1 for h in headlines if h.get("risk") == "high")
-    return meter, f"{n_high} high-risk of {len(headlines)} headlines (top-10)"
+    return meter, f"{n_high} high-risk of {len(headlines)} headlines (weighted top-3)"
 
 
 def _clean(title: str) -> str:

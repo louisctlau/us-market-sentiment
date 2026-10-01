@@ -1,3 +1,17 @@
+## 2026-10-01 — News Risk: top-3 weighted gauge (Tasty-style)
+- The Headline Risk gauge now concentrates on the 3 riskiest headlines with
+  TastyDayTraders' weighting — 0.55 × riskiest + 0.30 × 2nd + 0.15 × 3rd,
+  rounded and capped at 100 — replacing the top-10 average. Only their
+  aggregation was adopted: their per-event scoring is built for an
+  official-posts-only feed (White House/Fed/SEC, manually curated, no time
+  decay) and doesn't map onto 30 automated general headlines.
+- The 20-point severity bands are unchanged (their bands are calibrated to
+  official-post event scores, not headline scores). With fewer than 3
+  headlines the weights renormalize so a single headline reads at face value.
+- Expect a jumpier gauge than before — top-3 of 30 daily headlines is
+  noisier than Tasty's top-3 of a few official posts. That concentration is
+  the point: the market-moving stories drive the number.
+
 ## 2026-10-01 — News Risk: yield-aware + top-10 gauge
 - "Yield" is now verb-aware like "deal"/"tariff": "yields surge/climb" scores
   as risk (+0.8), "yields ease/fall" as relief (-0.4). Previously the engine
