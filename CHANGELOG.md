@@ -1,3 +1,11 @@
+## 2026-10-01 — News Risk: revert to top-10 gauge
+- Reverted the Tasty-style weighted top-3 gauge after Louis found the
+  100/Severe reading didn't reflect reality: three high-risk headlines
+  pinned the gauge at maximum under the 0.55/0.30/0.15 weighting, while the
+  broader top-10 average read the same news flow at a saner level. The
+  top-10 average is back as the gauge aggregation; the v3 verb-aware yield
+  classifier is unchanged.
+
 ## 2026-10-01 — News Risk: top-3 weighted gauge (Tasty-style)
 - The Headline Risk gauge now concentrates on the 3 riskiest headlines with
   TastyDayTraders' weighting — 0.55 × riskiest + 0.30 × 2nd + 0.15 × 3rd,
