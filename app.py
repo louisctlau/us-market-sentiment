@@ -14,7 +14,7 @@ from src import fedwatch as F
 from src import fred as FR
 from src import gex as G
 from src import sentiment_v2 as S
-from src.econ_calendar import fetch_calendar
+from src.econ_calendar_v2 import fetch_calendar
 from src.data import (
     CROSS_ASSETS,
     DEFENSIVE_SECTORS,
