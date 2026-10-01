@@ -1,3 +1,17 @@
+## 2026-10-01 — Reporting periods on calendar + catalysts
+- Economic calendar events now show the reference period in brackets —
+  e.g. "CPI (Sep)", "GDP (Q3)" — derived from each indicator's standard
+  reporting lag (the Nasdaq feed doesn't carry it). Monthly releases report
+  the prior month, several Census reports (construction spending, factory
+  orders, full trade balance, business inventories, wholesale trade) two
+  months back, quarterly releases the prior quarter, current-month surveys
+  the release month, and weekly labour data the reference week. Verified
+  against this week's actual releases (e.g. the Oct 1 construction spending
+  and Oct 2 factory orders both cover August). Events with no numeric
+  figure (speeches, auctions, weekly energy stats) get no label.
+- Sidebar "Upcoming catalysts" now shows the reference month too:
+  CPI (Sep), PCE (Sep), Non-farm payrolls (Sep).
+
 ## 2026-10-01 — News Risk: revert to top-10 gauge
 - Reverted the Tasty-style weighted top-3 gauge after Louis found the
   100/Severe reading didn't reflect reality: three high-risk headlines

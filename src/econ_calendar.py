@@ -46,6 +46,90 @@ _LOWER_BETTER = (
 _NEUTRAL = ("auction", "balance sheet", "reserve balances", "speaks",
             "testifies", "speech")
 
+# Reporting-period conventions: which period each release's figure covers.
+# The Nasdaq feed does not carry this, so it is derived from each
+# indicator's standard reporting lag. Most monthly releases (CPI, payrolls,
+# retail sales, ...) report the previous month, but several Census reports
+# (construction spending, factory orders, full trade balance, business
+# inventories, wholesale trade) run a five-to-six-week lag and report two
+# months back; quarterly releases (GDP, corporate profits, ...) report the
+# previous quarter; current-month surveys (confidence, regional Fed surveys,
+# ...) the release month; weekly labour data the reference week.
+# FHFA/Case-Shiller house prices and consumer credit also run two months.
+# Anything without a numeric figure (speeches, minutes, auctions, weekly
+# energy stats, ...) gets no label. Where the feed cannot distinguish two
+# releases of the same series (advance vs full wholesale inventories),
+# no label is shown rather than a possibly wrong one.
+_NO_PERIOD = (
+    "speaks", "speech", "testif", "press conference", "minutes",
+    "beige book", "auction", "balance sheet", "reserve balances",
+    "cftc", "rig count", "opec", "trump", "president",
+    "stockpiles", "gas storage", "crude oil",
+    "gasoline", "distillate", "heating oil", "refinery", "baker hughes",
+    "api weekly", "redbook", "mba ", "mortgage", "gdpnow", "energy outlook",
+)
+_QUARTERLY = (
+    "gdp", "corporate profits", "productivity", "employment cost",
+    "unit labor",
+)
+_WEEKLY_LABOR = (
+    "initial jobless", "continuing jobless", "jobless claims",
+    "adp employment change weekly",
+)
+_CURRENT_MONTH = (
+    "confidence", "sentiment", "optimism", "inflation expectations",
+    "empire state", "philly", "philadelphia fed", "richmond fed",
+    "kansas fed", "dallas fed mfg", "dallas fed services",
+    "texas services", "chicago pmi", "michigan",
+)
+_TWO_MONTH_LAG = (
+    "house price", "hpi", "case-shiller", "s&p/cs", "consumer credit",
+    "construction spending", "factory orders", "durables excluding",
+    "trade balance", "business inventories", "wholesale trade sales",
+)
+_MONTHLY_PREV = (
+    "nonfarm", "payrolls", "consumer price", "cpi", "producer price", "ppi",
+    "pce", "dallas fed pce", "retail sales", "industrial production",
+    "housing starts", "building permits", "new home sales", "existing home",
+    "pending home", "durable goods", "goods trade balance",
+    "personal income", "personal spending", "consumer spending",
+    "personal consumption", "jolts", "job openings",
+    "unemployment rate", "employment change", "employment trends",
+    "hourly earnings", "weekly hours", "participation rate",
+    "import prices", "export prices", "imports", "exports",
+    "retail inventories", "ism", "s&p global",
+    "challenger", "total vehicle sales",
+)
+_ABBR = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _period(name: str, dt) -> str | None:
+    """Reference period of the release's figure: 'Sep', 'Q3', or None."""
+    n = name.lower()
+    if any(k in n for k in _NO_PERIOD):
+        return None
+    if (any(k in n for k in _QUARTERLY)
+            or ("pce" in n and "prices" in n and "price index" not in n)):
+        return f"Q{((dt.month - 1) // 3 - 1) % 4 + 1}"
+    if any(k in n for k in _WEEKLY_LABOR):
+        ref = dt - timedelta(days=((dt.weekday() - 5) % 7) or 7)
+        if "continuing" in n:  # one extra week of lag
+            ref -= timedelta(weeks=1)
+        return _ABBR[ref.month - 1]
+    if any(k in n for k in _CURRENT_MONTH):
+        return _ABBR[dt.month - 1]
+    if any(k in n for k in _TWO_MONTH_LAG):
+        lag = 2
+    elif any(k in n for k in _MONTHLY_PREV):
+        lag = 1
+    else:
+        return None
+    ref = dt.replace(day=1)
+    for _ in range(lag):
+        ref = (ref - timedelta(days=1)).replace(day=1)
+    return _ABBR[ref.month - 1]
+
 
 def _impact(name: str) -> str:
     n = name.lower()
@@ -153,6 +237,7 @@ def fetch_calendar(days: int = 7) -> list[dict]:
                 "actual": actual,
                 "verdict": _verdict(actual, forecast, previous, direction),
                 "released": actual != "—",
+                "period": _period(title, dt),
             })
         day += timedelta(days=1)
     if not fetched_any:

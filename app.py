@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from src import commentary as C
@@ -93,30 +93,37 @@ _PCE_DATES = [date(2026, 9, 30), date(2026, 10, 29), date(2026, 11, 25),
               date(2026, 12, 23)]
 
 
+def _ref_month(d):
+    # Release's reference month: CPI/payrolls/PCE always report the
+    # previous month (e.g. the Oct 14 CPI covers September).
+    return (d.replace(day=1) - timedelta(days=1)).strftime("%b")
+
+
 def _next_catalysts(today):
     out = []
     fomc = [d for d, _ in F.MEETINGS if d >= today]
     if fomc:
-        out.append(("FOMC decision", fomc[0], "2:00 PM ET"))
+        out.append(("FOMC decision", fomc[0], "2:00 PM ET", ""))
     cpi = [d for d in _CPI_DATES if d >= today]
     if cpi:
-        out.append(("CPI", cpi[0], "8:30 AM ET"))
+        out.append(("CPI", cpi[0], "8:30 AM ET", _ref_month(cpi[0])))
     pce = [d for d in _PCE_DATES if d >= today]
     if pce:
-        out.append(("PCE", pce[0], "8:30 AM ET"))
+        out.append(("PCE", pce[0], "8:30 AM ET", _ref_month(pce[0])))
     nfp = [d for d in _PAYROLLS_DATES if d >= today]
     if nfp:
-        out.append(("Non-farm payrolls", nfp[0], "8:30 AM ET"))
+        out.append(("Non-farm payrolls", nfp[0], "8:30 AM ET", _ref_month(nfp[0])))
     out.sort(key=lambda x: x[1])
     return out
 
 
 st.sidebar.subheader("Upcoming catalysts")
 _today = datetime.now(ZoneInfo("America/Toronto")).date()
-for _name, _d, _t in _next_catalysts(_today):
+for _name, _d, _t, _p in _next_catalysts(_today):
     _n = (_d - _today).days
     _when = "today" if _n == 0 else "tomorrow" if _n == 1 else f"in {_n}d"
-    st.sidebar.markdown(f"**{_name}**<br>{_d.strftime('%a %b %d')} · {_t} · {_when}",
+    _label = f"{_name} ({_p})" if _p else _name
+    st.sidebar.markdown(f"**{_label}**<br>{_d.strftime('%a %b %d')} · {_t} · {_when}",
                         unsafe_allow_html=True)
 st.sidebar.markdown('<div class="sidebar-spacer"></div>', unsafe_allow_html=True)
 st.sidebar.divider()
@@ -966,13 +973,16 @@ with tabs[6]:
             e for e in events
             if e.get("impact") in sel_impacts
             and (not ql or ql in f"{e.get('date', '')} {e.get('time_et', '')} "
-                                f"{e.get('event', '')} {e.get('forecast', '—')} "
+                                f"{e.get('event', '')} {e.get('period', '') or ''} "
+                                f"{e.get('forecast', '—')} "
                                 f"{e.get('previous', '—')} {e.get('actual', '—')}".lower())
         ]
         st.caption(f"Showing {len(filtered)} of {len(events)} events.")
         verdicts = [e.get("verdict") for e in filtered]
         rows = [{"Date": e.get("date", ""), "Time": e.get("time_et", ""),
-                 "Event": e.get("event", ""), "Impact": e.get("impact", ""),
+                 "Event": e.get("event", "") +
+                          (f" ({e['period']})" if e.get("period") else ""),
+                 "Impact": e.get("impact", ""),
                  "Forecast": e.get("forecast", "—"),
                  "Previous": e.get("previous", "—"),
                  "Actual": e.get("actual", "—")}
@@ -995,7 +1005,10 @@ with tabs[6]:
                      use_container_width=True, hide_index=True)
         st.caption("Source: Nasdaq economic calendar (times ET). Released events "
                    "stay on the calendar all week — actuals are highlighted "
-                   "🟢 green when better than forecast/previous, 🔴 red when worse.")
+                   "🟢 green when better than forecast/previous, 🔴 red when worse. "
+                   "The period in brackets is the reference period each release "
+                   "reports (e.g. CPI (Sep), GDP (Q3)), derived from each "
+                   "indicator's standard reporting lag.")
     else:
         st.info("No events found.")
 
