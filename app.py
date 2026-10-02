@@ -1118,7 +1118,13 @@ with tabs[7]:
         if not has_rev:
             cap += " Revenue data needs a free FMP_API_KEY (Streamlit secrets)."
         else:
-            cap += " Revenue estimates: Financial Modeling Prep."
+            shown = reported + upcoming
+            def _has_rev(e):
+                r = revenues.get((e.get("symbol") or "").upper(), {})
+                return r.get("revenue_est") is not None or r.get("revenue_actual") is not None
+            n_cov = sum(1 for e in shown if _has_rev(e))
+            cap += (f" Revenue estimates: Financial Modeling Prep "
+                    f"(FMP has data for {n_cov} of {len(shown)} shown).")
         st.caption(cap)
     else:
         st.info("No notable earnings in the last day / next 7 days.")
