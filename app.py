@@ -1029,10 +1029,16 @@ with tabs[7]:
         today_str = _today.isoformat()
         # .get() with defaults: never crash if a cached older payload
         # (e.g. from a previous deploy) lacks the newer keys.
-        reported = [e for e in earnings if e.get("date", "") < today_str]
-        upcoming = [e for e in earnings if e.get("date", "") >= today_str]
+        # Table 1 = everything already reported (yesterday + today so far);
+        # Table 2 = still to report (later today + next 7 days).
+        reported = [e for e in earnings
+                    if e.get("date", "") < today_str
+                    or (e.get("date", "") == today_str and e.get("eps_actual"))]
+        upcoming = [e for e in earnings
+                    if e.get("date", "") > today_str
+                    or (e.get("date", "") == today_str and not e.get("eps_actual"))]
         if reported:
-            st.subheader(f"Reported yesterday ({len(reported)})")
+            st.subheader(f"Reported — yesterday & today ({len(reported)})")
             rrows = [{"Date": e.get("date", ""), "Symbol": e.get("symbol", ""),
                       "Company": e.get("name", ""),
                       "Mkt Cap ($B)": e.get("mcap_b", ""),
@@ -1054,9 +1060,9 @@ with tabs[7]:
                          use_container_width=True, hide_index=True)
             st.caption("Surprise 🟢 green = beat, 🔴 red = miss vs consensus.")
         else:
-            st.caption("No notable earnings reported yesterday.")
+            st.caption("Nothing reported yet.")
         if upcoming:
-            st.subheader(f"Upcoming — next 7 days ({len(upcoming)} notable)")
+            st.subheader(f"Upcoming — today & next 7 days ({len(upcoming)} notable)")
             rows = [{"Date": e.get("date", ""), "Time": e.get("time") or "—",
                      "Symbol": e.get("symbol", ""), "Company": e.get("name", ""),
                      "Mkt Cap ($B)": e.get("mcap_b", ""),
