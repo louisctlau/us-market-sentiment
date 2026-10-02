@@ -1,8 +1,8 @@
 ## 2026-10-02 — Earnings: reported actuals + yesterday
 - The Earnings tab now covers yesterday through the next 7 days. A new
   "Reported yesterday" section shows EPS actual vs estimate with the
-  surprise %, highlighted 🟢 green on beats and 🔴 red on misses (same
-  convention as the economic calendar's actuals). The dead "Revenue est."
+  surprise %, highlighted 🟢 green when the actual beats and 🔴 red on
+  misses (same convention as the economic calendar's actuals). The dead "Revenue est."
   column is gone — a 13-day scan of the Nasdaq feed found zero rows
   carrying a revenue forecast.
 
