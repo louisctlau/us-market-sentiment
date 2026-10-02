@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from src import commentary as C
 from src import fedwatch as F
+from src import fmp as FMP
 from src import fred as FR
 from src import gex as G
 from src import sentiment_v2 as S
@@ -218,6 +219,22 @@ def load_earnings():
         return fetch_earnings(), None
     except Exception as e:
         return [], str(e)
+
+
+@st.cache_data(ttl=3600)
+def load_revenues(from_ds: str, to_ds: str):
+    """FMP revenue estimates/actuals for a date range. ({data}, err).
+
+    Empty dict (no key or fetch failed) means the earnings tables simply
+    omit revenue columns — never a crash.
+    """
+    key = FMP.api_key()
+    if not key:
+        return {}, None
+    try:
+        return FMP.fetch_revenues(from_ds, to_ds, key), None
+    except Exception as e:
+        return {}, str(e)
 
 
 @st.cache_data(ttl=21600)
@@ -1037,25 +1054,47 @@ with tabs[7]:
         upcoming = [e for e in earnings
                     if e.get("date", "") > today_str
                     or (e.get("date", "") == today_str and not e.get("eps_actual"))]
+        # Revenue estimates/actuals via FMP (one call covers the whole range).
+        # {} when no key or the fetch failed -> tables just omit the columns.
+        dates = [e.get("date", "") for e in earnings if e.get("date", "")]
+        revenues, _rev_err = load_revenues(min(dates), max(dates)) if dates else ({}, None)
+        has_rev = bool(revenues)
         if reported:
             st.subheader(f"Reported — yesterday & today ({len(reported)} notable)")
-            rrows = [{"Date": e.get("date", ""), "Symbol": e.get("symbol", ""),
-                      "Company": e.get("name", ""),
-                      "Mkt Cap ($B)": e.get("mcap_b", ""),
-                      "EPS actual": e.get("eps_actual") or "—",
-                      "EPS est.": e.get("eps_forecast") or "—",
-                      "Surprise": (f"{e['surprise']:+.1f}%"
-                                   if e.get("surprise") is not None else "—")}
-                     for e in reported]
-            verdicts = [("beat" if (s or 0) > 0 else "miss" if (s or 0) < 0 else "")
-                        for s in (e.get("surprise") for e in reported)]
+            rrows = []
+            verdicts = []
+            rverdicts = []
+            for e in reported:
+                r = revenues.get((e.get("symbol") or "").upper(), {})
+                rev_act, rev_est = r.get("revenue_actual"), r.get("revenue_est")
+                row = {"Date": e.get("date", ""), "Symbol": e.get("symbol", ""),
+                       "Company": e.get("name", ""),
+                       "Mkt Cap ($B)": e.get("mcap_b", ""),
+                       "EPS actual": e.get("eps_actual") or "—",
+                       "EPS est.": e.get("eps_forecast") or "—",
+                       "Surprise": (f"{e['surprise']:+.1f}%"
+                                    if e.get("surprise") is not None else "—")}
+                s = e.get("surprise")
+                verdicts.append("beat" if (s or 0) > 0 else "miss" if (s or 0) < 0 else "")
+                if has_rev:
+                    row["Rev actual"] = FMP.fmt_revenue(rev_act)
+                    row["Rev est."] = FMP.fmt_revenue(rev_est)
+                    rs = FMP.revenue_surprise(rev_act, rev_est)
+                    rverdicts.append("beat" if (rs or 0) > 0 else "miss" if (rs or 0) < 0 else "")
+                rrows.append(row)
             def earn_highlight(row):
                 v = verdicts[row.name]
-                return [("background-color: #27ae6055; font-weight: 600"
-                         if col == "EPS actual" and v == "beat" else
-                         "background-color: #e74c3c55; font-weight: 600"
-                         if col == "EPS actual" and v == "miss" else "")
-                        for col in row.index]
+                rv = rverdicts[row.name] if rverdicts else ""
+                out = []
+                for col in row.index:
+                    cell_v = rv if col == "Rev actual" else v if col == "EPS actual" else ""
+                    if cell_v == "beat":
+                        out.append("background-color: #27ae6055; font-weight: 600")
+                    elif cell_v == "miss":
+                        out.append("background-color: #e74c3c55; font-weight: 600")
+                    else:
+                        out.append("")
+                return out
             st.dataframe(pd.DataFrame(rrows).style.apply(earn_highlight, axis=1),
                          use_container_width=True, hide_index=True)
             st.caption("Surprise 🟢 green = beat, 🔴 red = miss vs consensus.")
@@ -1063,13 +1102,24 @@ with tabs[7]:
             st.caption("Nothing reported yet.")
         if upcoming:
             st.subheader(f"Upcoming — today & next 7 days ({len(upcoming)} notable)")
-            rows = [{"Date": e.get("date", ""), "Time": e.get("time") or "—",
-                     "Symbol": e.get("symbol", ""), "Company": e.get("name", ""),
-                     "Mkt Cap ($B)": e.get("mcap_b", ""),
-                     "EPS est.": e.get("eps_forecast") or "—"} for e in upcoming]
+            rows = []
+            for e in upcoming:
+                r = revenues.get((e.get("symbol") or "").upper(), {})
+                row = {"Date": e.get("date", ""), "Time": e.get("time") or "—",
+                       "Symbol": e.get("symbol", ""), "Company": e.get("name", ""),
+                       "Mkt Cap ($B)": e.get("mcap_b", ""),
+                       "EPS est.": e.get("eps_forecast") or "—"}
+                if has_rev:
+                    row["Rev est."] = FMP.fmt_revenue(r.get("revenue_est"))
+                rows.append(row)
             st.dataframe(pd.DataFrame(rows),
                          use_container_width=True, hide_index=True)
-        st.caption("Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap.")
+        cap = "Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap."
+        if not has_rev:
+            cap += " Revenue data needs a free FMP_API_KEY (Streamlit secrets)."
+        else:
+            cap += " Revenue estimates: Financial Modeling Prep."
+        st.caption(cap)
     else:
         st.info("No notable earnings in the last day / next 7 days.")
 

@@ -1,3 +1,10 @@
+## 2026-10-02 — Earnings: revenue data via FMP
+- Both earnings tables now carry revenue: reported shows "Rev actual" vs
+  "Rev est." with the actual highlighted 🟢 green / 🔴 red on beats/misses
+  (same convention as EPS); upcoming shows "Rev est.". Data comes from
+  Financial Modeling Prep's free tier (one call per refresh covers the whole
+  date range; 250 calls/day). Needs an `FMP_API_KEY` Streamlit secret —
+  until it's set the tables render exactly as before.
 ## 2026-10-02 — Earnings: reported actuals + yesterday
 - The Earnings tab now covers yesterday through the next 7 days. A new
   "Reported yesterday" section shows EPS actual vs estimate with the
