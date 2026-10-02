@@ -1,4 +1,5 @@
-"""Upcoming earnings — next N days, via Nasdaq's public calendar API (no key)."""
+"""Earnings calendar — yesterday's reported actuals + next N days, via Nasdaq's
+public calendar API (no key)."""
 from __future__ import annotations
 
 import re
@@ -40,14 +41,33 @@ def _clean_time(s: str) -> str:
             .replace("not supplied", "—") or "—")
 
 
-def fetch_earnings(days: int = 7, min_mcap_b: float = 5.0) -> list[dict]:
-    """Earnings for the next `days` days, filtered to companies >= min_mcap_b $B.
+def _parse_surprise(s: str) -> float | None:
+    """'11.63' / '-4.2' -> float percent. None if missing."""
+    s = (s or "").strip()
+    if s in {"", "--", "N/A"}:
+        return None
+    try:
+        return float(s.replace(",", ""))
+    except ValueError:
+        return None
 
-    Returns rows: date, time, symbol, name, mcap_b, eps_forecast, revenue_forecast.
+
+def _clean_actual(s: str) -> str:
+    s = (s or "").strip()
+    return "" if s in {"--", "N/A"} else s
+
+
+def fetch_earnings(days: int = 7, past_days: int = 1,
+                   min_mcap_b: float = 5.0) -> list[dict]:
+    """Earnings from `past_days` days ago through the next `days` days,
+    filtered to companies >= min_mcap_b $B.
+
+    Returns rows: date, time, symbol, name, mcap_b, eps_forecast,
+    eps_actual ("" if not yet reported), surprise (float %, None if n/a).
     Sorted by date, then market cap desc.
     """
     rows: list[dict] = []
-    for i in range(days):
+    for i in range(-past_days, days):
         d = datetime.now(_ET).date() + timedelta(days=i)  # ET, not server-local
         ds = d.strftime("%Y-%m-%d")
         try:
@@ -68,7 +88,8 @@ def fetch_earnings(days: int = 7, min_mcap_b: float = 5.0) -> list[dict]:
                     "name": row.get("name", ""),
                     "mcap_b": round(mcap_b, 1),
                     "eps_forecast": (row.get("epsForecast") or "").strip(),
-                    "revenue_forecast": (row.get("revenueForecast") or "").strip(),
+                    "eps_actual": _clean_actual(row.get("eps")),
+                    "surprise": _parse_surprise(row.get("surprise")),
                 })
         except Exception:
             continue

@@ -1026,15 +1026,46 @@ with tabs[7]:
     if err:
         st.warning(f"Earnings feed unavailable: {err}")
     elif earnings:
-        st.subheader(f"Earnings — next 7 days ({len(earnings)} notable)")
-        rows = [{"Date": e["date"], "Time": e["time"] or "—", "Symbol": e["symbol"],
-                 "Company": e["name"], "Mkt Cap ($B)": e["mcap_b"],
-                 "EPS est.": e["eps_forecast"] or "—",
-                 "Revenue est.": e["revenue_forecast"] or "—"} for e in earnings]
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        today_str = _today.isoformat()
+        # .get() with defaults: never crash if a cached older payload
+        # (e.g. from a previous deploy) lacks the newer keys.
+        reported = [e for e in earnings if e.get("date", "") < today_str]
+        upcoming = [e for e in earnings if e.get("date", "") >= today_str]
+        if reported:
+            st.subheader(f"Reported yesterday ({len(reported)})")
+            rrows = [{"Date": e.get("date", ""), "Symbol": e.get("symbol", ""),
+                      "Company": e.get("name", ""),
+                      "Mkt Cap ($B)": e.get("mcap_b", ""),
+                      "EPS actual": e.get("eps_actual") or "—",
+                      "EPS est.": e.get("eps_forecast") or "—",
+                      "Surprise": (f"{e['surprise']:+.1f}%"
+                                   if e.get("surprise") is not None else "—")}
+                     for e in reported]
+            verdicts = [("beat" if (s or 0) > 0 else "miss" if (s or 0) < 0 else "")
+                        for s in (e.get("surprise") for e in reported)]
+            def earn_highlight(row):
+                v = verdicts[row.name]
+                return [("background-color: #27ae6055; font-weight: 600"
+                         if col == "Surprise" and v == "beat" else
+                         "background-color: #e74c3c55; font-weight: 600"
+                         if col == "Surprise" and v == "miss" else "")
+                        for col in row.index]
+            st.dataframe(pd.DataFrame(rrows).style.apply(earn_highlight, axis=1),
+                         use_container_width=True, hide_index=True)
+            st.caption("Surprise 🟢 green = beat, 🔴 red = miss vs consensus.")
+        else:
+            st.caption("No notable earnings reported yesterday.")
+        if upcoming:
+            st.subheader(f"Upcoming — next 7 days ({len(upcoming)} notable)")
+            rows = [{"Date": e.get("date", ""), "Time": e.get("time") or "—",
+                     "Symbol": e.get("symbol", ""), "Company": e.get("name", ""),
+                     "Mkt Cap ($B)": e.get("mcap_b", ""),
+                     "EPS est.": e.get("eps_forecast") or "—"} for e in upcoming]
+            st.dataframe(pd.DataFrame(rows),
+                         use_container_width=True, hide_index=True)
         st.caption("Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap.")
     else:
-        st.info("No notable earnings in the next 7 days.")
+        st.info("No notable earnings in the last day / next 7 days.")
 
 # ---------------- GEX ----------------
 with tabs[8]:
