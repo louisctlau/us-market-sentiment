@@ -70,28 +70,34 @@ def fetch_earnings(days: int = 7, past_days: int = 1,
     for i in range(-past_days, days):
         d = datetime.now(_ET).date() + timedelta(days=i)  # ET, not server-local
         ds = d.strftime("%Y-%m-%d")
-        try:
-            r = requests.get(
-                "https://api.nasdaq.com/api/calendar/earnings",
-                params={"date": ds}, headers=_HEADERS, timeout=15)
-            if r.status_code != 200:
+        payload = None
+        # The Nasdaq API intermittently blanks a date; retry so one hiccup
+        # doesn't wipe the whole "Reported yesterday" section.
+        for _ in range(3):
+            try:
+                r = requests.get(
+                    "https://api.nasdaq.com/api/calendar/earnings",
+                    params={"date": ds}, headers=_HEADERS, timeout=15)
+                if r.status_code == 200:
+                    payload = r.json().get("data") or {}
+                    break
+            except Exception:
                 continue
-            payload = r.json().get("data") or {}
-            for row in payload.get("rows") or []:
-                mcap_b = _parse_mcap(row.get("marketCap", ""))
-                if mcap_b is None or mcap_b < min_mcap_b:
-                    continue
-                rows.append({
-                    "date": ds,
-                    "time": _clean_time(row.get("time")),
-                    "symbol": row.get("symbol", ""),
-                    "name": row.get("name", ""),
-                    "mcap_b": round(mcap_b, 1),
-                    "eps_forecast": (row.get("epsForecast") or "").strip(),
-                    "eps_actual": _clean_actual(row.get("eps")),
-                    "surprise": _parse_surprise(row.get("surprise")),
-                })
-        except Exception:
+        if not payload:
             continue
+        for row in payload.get("rows") or []:
+            mcap_b = _parse_mcap(row.get("marketCap", ""))
+            if mcap_b is None or mcap_b < min_mcap_b:
+                continue
+            rows.append({
+                "date": ds,
+                "time": _clean_time(row.get("time")),
+                "symbol": row.get("symbol", ""),
+                "name": row.get("name", ""),
+                "mcap_b": round(mcap_b, 1),
+                "eps_forecast": (row.get("epsForecast") or "").strip(),
+                "eps_actual": _clean_actual(row.get("eps")),
+                "surprise": _parse_surprise(row.get("surprise")),
+            })
     rows.sort(key=lambda r: (r["date"], -r["mcap_b"]))
     return rows
