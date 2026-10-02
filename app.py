@@ -1046,9 +1046,9 @@ with tabs[7]:
             def earn_highlight(row):
                 v = verdicts[row.name]
                 return [("background-color: #27ae6055; font-weight: 600"
-                         if col == "Surprise" and v == "beat" else
+                         if col == "EPS actual" and v == "beat" else
                          "background-color: #e74c3c55; font-weight: 600"
-                         if col == "Surprise" and v == "miss" else "")
+                         if col == "EPS actual" and v == "miss" else "")
                         for col in row.index]
             st.dataframe(pd.DataFrame(rrows).style.apply(earn_highlight, axis=1),
                          use_container_width=True, hide_index=True)
