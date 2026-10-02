@@ -1038,7 +1038,7 @@ with tabs[7]:
                     if e.get("date", "") > today_str
                     or (e.get("date", "") == today_str and not e.get("eps_actual"))]
         if reported:
-            st.subheader(f"Reported — yesterday & today ({len(reported)})")
+            st.subheader(f"Reported — yesterday & today ({len(reported)} notable)")
             rrows = [{"Date": e.get("date", ""), "Symbol": e.get("symbol", ""),
                       "Company": e.get("name", ""),
                       "Mkt Cap ($B)": e.get("mcap_b", ""),
