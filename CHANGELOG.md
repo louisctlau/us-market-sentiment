@@ -1,3 +1,10 @@
+## 2026-10-05 — GEX: zero-gamma renamed to γflip
+- The zero-gamma line (chart annotation, metric, read line, positioning
+  note) is now labeled "γflip", matching Portfolio Lab's Options Analytics.
+
+## 2026-10-02 — Earnings: revenue columns hidden
+- The revenue columns are hidden, and will be displayed once a viable free
+  source is available.
 ## 2026-10-02 — Earnings: revenue data via FMP
 - Both earnings tables now carry revenue: reported shows "Rev actual" vs
   "Rev est." with the actual highlighted 🟢 green / 🔴 red on beats/misses

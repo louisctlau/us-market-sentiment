@@ -221,13 +221,15 @@ def load_earnings():
         return [], str(e)
 
 
+# Revenue columns are hidden until a viable free source is available.
+# FMP's free tier covers only a handful of names per week and its
+# analyst-estimates endpoint is paid-only (verified 2026-10-02).
+SHOW_REVENUE_COLUMNS = False
+
+
 @st.cache_data(ttl=3600)
 def load_revenues(from_ds: str, to_ds: str):
-    """FMP revenue estimates/actuals for a date range. ({data}, err).
-
-    Empty dict (no key or fetch failed) means the earnings tables simply
-    omit revenue columns — never a crash.
-    """
+    """FMP revenue estimates/actuals for a date range. ({data}, err)."""
     key = FMP.api_key()
     if not key:
         return {}, None
@@ -1055,10 +1057,13 @@ with tabs[7]:
                     if e.get("date", "") > today_str
                     or (e.get("date", "") == today_str and not e.get("eps_actual"))]
         # Revenue estimates/actuals via FMP (one call covers the whole range).
-        # {} when no key or the fetch failed -> tables just omit the columns.
+        # Hidden behind SHOW_REVENUE_COLUMNS until a viable free source exists.
         dates = [e.get("date", "") for e in earnings if e.get("date", "")]
-        revenues, _rev_err = load_revenues(min(dates), max(dates)) if dates else ({}, None)
-        has_rev = bool(revenues)
+        if SHOW_REVENUE_COLUMNS and dates:
+            revenues, _rev_err = load_revenues(min(dates), max(dates))
+        else:
+            revenues = {}
+        has_rev = SHOW_REVENUE_COLUMNS and bool(revenues)
         if reported:
             st.subheader(f"Reported — yesterday & today ({len(reported)} notable)")
             rrows = []
@@ -1114,18 +1119,7 @@ with tabs[7]:
                 rows.append(row)
             st.dataframe(pd.DataFrame(rows),
                          use_container_width=True, hide_index=True)
-        cap = "Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap."
-        if not has_rev:
-            cap += " Revenue data needs a free FMP_API_KEY (Streamlit secrets)."
-        else:
-            shown = reported + upcoming
-            def _has_rev(e):
-                r = revenues.get((e.get("symbol") or "").upper(), {})
-                return r.get("revenue_est") is not None or r.get("revenue_actual") is not None
-            n_cov = sum(1 for e in shown if _has_rev(e))
-            cap += (f" Revenue estimates: Financial Modeling Prep "
-                    f"(FMP has data for {n_cov} of {len(shown)} shown).")
-        st.caption(cap)
+        st.caption("Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap.")
     else:
         st.info("No notable earnings in the last day / next 7 days.")
 
@@ -1151,7 +1145,7 @@ with tabs[8]:
                   f"{g['put_wall']:.0f}" if g["put_wall"] else "—")
         m3.metric("Call wall (resistance)",
                   f"{g['call_wall']:.0f}" if g["call_wall"] else "—")
-        m4.metric("Zero-gamma",
+        m4.metric("γflip",
                   f"{g['zero_gamma']:.0f}" if g["zero_gamma"] else "—")
         st.plotly_chart(G.gex_chart(g, f"{name} — net GEX by strike "
                                       f"({', '.join(g['expiries'])})"),

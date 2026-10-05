@@ -247,7 +247,7 @@ def positioning_score(gex: dict | None) -> tuple[float, str]:
     if zg and spot:
         dist = (spot - zg) / spot
         sleeves.append((_clip(50 + dist / 0.025 * 50), 0.6))
-        notes.append(f"{dist * 100:+.1f}% vs zero-gamma")
+        notes.append(f"{dist * 100:+.1f}% vs γflip")
     t = gex.get("total_net")
     if t is not None:
         sleeves.append((65.0 if t > 0 else 35.0, 0.4))
