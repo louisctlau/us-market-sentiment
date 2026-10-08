@@ -214,6 +214,47 @@ def load_ten_year():
 
 
 @st.cache_data(ttl=3600)
+def load_fed_rates_5y():
+    # Optional: None on failure, never raises — the 5y chart is skipped
+    # if FRED is down. Daily target band (DFEDTARU/DFEDTARL) + effective (DFF).
+    try:
+        start = (date.today() - timedelta(days=5 * 366)).isoformat()
+        up = FR.get_series("DFEDTARU", observation_start=start)
+        lo = FR.get_series("DFEDTARL", observation_start=start)
+        eff = FR.get_series("DFF", observation_start=start)
+    except Exception:
+        return None
+    df = (pd.DataFrame({"upper": up["value"], "lower": lo["value"]})
+            .join(eff["value"].rename("effective"), how="outer")
+            .sort_index().ffill())
+    return None if df.empty else df
+
+
+def fed_rates_5y_chart(df: pd.DataFrame) -> go.Figure:
+    """Trailing 5y: FOMC target range as a shaded band + effective rate line."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df["upper"], mode="lines",
+                             line=dict(width=0), showlegend=False,
+                             hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["lower"], mode="lines",
+                             line=dict(width=0), fill="tonexty",
+                             fillcolor="rgba(99,110,250,0.25)",
+                             name="Target range", hoverinfo="skip"))
+    for col, nm in (("upper", "Target upper"), ("lower", "Target lower")):
+        fig.add_trace(go.Scatter(x=df.index, y=df[col], mode="lines",
+                                 line=dict(width=1.5, color="#636EFA"),
+                                 name=nm))
+    fig.add_trace(go.Scatter(x=df.index, y=df["effective"], mode="lines",
+                             line=dict(width=1.5, color="#FFFFFF"),
+                             name="Effective (DFF)"))
+    fig.update_layout(title="Federal funds rate — trailing 5 years",
+                      yaxis_title="%", height=320,
+                      margin=dict(t=40, b=10, l=10, r=10),
+                      legend=dict(orientation="h", y=1.02))
+    return fig
+
+
+@st.cache_data(ttl=3600)
 def load_earnings():
     try:
         return fetch_earnings(), None
@@ -1200,6 +1241,12 @@ with tabs[9]:
                         f"{m['date'].strftime('%b %d')} meeting — "
                         "probability history (90 days)"),
                     use_container_width=True)
+        rates5y = load_fed_rates_5y()
+        if rates5y is not None:
+            st.plotly_chart(fed_rates_5y_chart(rates5y),
+                            use_container_width=True)
+            st.caption("Daily; shaded band = FOMC target range. Source: FRED "
+                       "(DFEDTARU, DFEDTARL, DFF).")
         st.caption("Method: implied avg rate = 100 − ZQ futures price; expected "
                    "post-meeting rate strips out pre-decision days (chained across "
                    "meetings); expected move split across adjacent 25bp buckets. "
