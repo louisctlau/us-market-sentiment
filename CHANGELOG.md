@@ -1,3 +1,8 @@
+## 2026-10-08 — Fed Watch: trailing 5-year rate chart
+- New chart at the bottom of the Fed Watch tab: trailing 5 years of the
+  federal funds rate — FOMC target range as a shaded band with the daily
+  effective rate overlaid. Data from FRED (DFEDTARU, DFEDTARL, DFF).
+
 ## 2026-10-05 — GEX: zero-gamma renamed to γflip
 - The zero-gamma line (chart annotation, metric, read line, positioning
   note) is now labeled "γflip", matching Portfolio Lab's Options Analytics.
