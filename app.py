@@ -202,18 +202,25 @@ def load_gex(etf: str):
 
 @st.cache_data(ttl=3600)
 def load_gex_history():
-    """Trailing GEX snapshots from data/options_history.csv (written by the
-    daily options-chain archive job). Returns None when the file is missing,
-    incomplete, or has no SPY rows — the tab shows a friendly 'collecting'
-    note instead of an error."""
-    try:
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "data", "options_history.csv")
-        df = pd.read_csv(path, parse_dates=["date"])
-    except Exception:
-        return None
+    """Trailing GEX snapshots. The daily options-chain archive job rebuilds
+    data/options_history.csv in the asset-mix-dashboard repo and pushes it;
+    this reads the fresh copy from the raw GitHub URL, falling back to the
+    local copy. Returns None when unavailable or with no SPY rows — the tab
+    shows a friendly 'collecting' note instead of an error."""
     need = {"date", "ticker", "net_gex_m", "gamma_flip", "spot"}
-    if df is None or df.empty or not need.issubset(set(df.columns)):
+    df = None
+    for src in ("https://raw.githubusercontent.com/louisctlau/"
+                "asset-mix-dashboard/main/data/options_history.csv",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "data", "options_history.csv")):
+        try:
+            df = pd.read_csv(src, parse_dates=["date"])
+            if df is not None and not df.empty and need.issubset(set(df.columns)):
+                break
+            df = None
+        except Exception:
+            df = None
+    if df is None or df.empty:
         return None
     df = df[df["ticker"] == "SPY"].sort_values("date")
     if df.empty:
