@@ -51,10 +51,16 @@ def add_event_vlines(fig, start, end, max_lines: int = 60):
     FOMC = gray dashed, CPI = light dotted. Mutates fig in place."""
     evts = events_in_range(start, end)[:max_lines]
     for d, label, kind in evts:
-        fig.add_vline(
-            x=d, line_dash="dash" if kind == "fomc" else "dot",
-            line_color=("rgba(150,150,150,0.55)" if kind == "fomc"
-                        else "rgba(150,150,150,0.30)"),
-            line_width=1, annotation_text="",
-            hovertext=f"{label} {d:%b %d, %Y}")
+        try:
+            # NB: pass an ISO string, not a datetime.date — Plotly's
+            # add_vline raises TypeError in _get_subplot when x is a date
+            # object on a Timestamp axis, which aborts the whole app.
+            fig.add_vline(
+                x=d.isoformat(), line_dash="dash" if kind == "fomc" else "dot",
+                line_color=("rgba(150,150,150,0.55)" if kind == "fomc"
+                            else "rgba(150,150,150,0.30)"),
+                line_width=1)
+        except Exception:
+            # A single bad marker must never take down the app.
+            continue
     return fig
