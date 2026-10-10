@@ -6,15 +6,21 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
+import os
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+from plotly.subplots import make_subplots
 
 from src import commentary as C
+from src import events as EV
 from src import fedwatch as F
 from src import fmp as FMP
 from src import fred as FR
 from src import gex as G
+from src import glossary as GL
+from src import sahm as SH
 from src import sentiment_v2 as S
+from src import sentiment_attrib as SA
 from src.econ_calendar_v2 import fetch_calendar
 from src.data import (
     CROSS_ASSETS,
@@ -194,6 +200,29 @@ def load_gex(etf: str):
     return G.gex_by_strike(etf)
 
 
+@st.cache_data(ttl=3600)
+def load_gex_history():
+    """Trailing GEX snapshots from data/options_history.csv (written by the
+    daily options-chain archive job). Returns None when the file is missing,
+    incomplete, or has no SPY rows — the tab shows a friendly 'collecting'
+    note instead of an error."""
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "data", "options_history.csv")
+        df = pd.read_csv(path, parse_dates=["date"])
+    except Exception:
+        return None
+    need = {"date", "ticker", "net_gex_m", "gamma_flip", "spot"}
+    if df is None or df.empty or not need.issubset(set(df.columns)):
+        return None
+    df = df[df["ticker"] == "SPY"].sort_values("date")
+    if df.empty:
+        return None
+    df = df.copy()
+    df["flip_dist"] = df["spot"] - df["gamma_flip"]
+    return df
+
+
 @st.cache_data(ttl=900)
 def load_fedwatch():
     # Failures raise instead of being returned (see load_gex note above).
@@ -247,6 +276,7 @@ def fed_rates_5y_chart(df: pd.DataFrame) -> go.Figure:
     fig.add_trace(go.Scatter(x=df.index, y=df["effective"], mode="lines",
                              line=dict(width=1.5, color="#FFFFFF"),
                              name="Effective (DFF)"))
+    EV.add_event_vlines(fig, df.index.min(), df.index.max())
     fig.update_layout(title="Federal funds rate — trailing 5 years",
                       yaxis_title="%", height=320,
                       margin=dict(t=40, b=10, l=10, r=10),
@@ -423,7 +453,10 @@ components = build_components(0, gex=spy_gex, fed=fed,
                               news_meter=headline_meter if headlines else None)
 score_today, breakdown = S.composite(components)
 # Headline is the 3-day average — one volatile session can't swing it 10+ points.
-past = [S.composite(build_components(n))[0] for n in (1, 2)]
+# Keep the full past-day component sets: the briefing card needs the sleeve
+# deltas, not just the headline scores.
+past_comps = [build_components(n) for n in (1, 2)]
+past = [S.composite(c)[0] for c in past_comps]
 score = float(np.mean([score_today, *past]))
 
 
@@ -443,6 +476,31 @@ tabs = st.tabs(["Overview", "Indices", "Volatility", "Macro",
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
+    # --- Today's briefing: 3-bullet synthesis ---
+    _reg = S.regime(score)
+    _deltas = SA.sleeve_deltas(components, past_comps[0])
+    _mover = max(_deltas.items(), key=lambda kv: abs(kv[1])) if _deltas else None
+    _nc = _next_catalysts(_today)
+    if _nc:
+        _n0, _d0, _t0, _p0 = _nc[0]
+        _nd = (_d0 - _today).days
+        _nwhen = "today" if _nd == 0 else "tomorrow" if _nd == 1 else f"in {_nd}d"
+        _nc_txt = (f"{_n0}{f' ({_p0})' if _p0 else ''} — {_d0:%a %b %d}, "
+                   f"{_t0} ({_nwhen})")
+    else:
+        _nc_txt = "none scheduled"
+    st.subheader("Today's briefing")
+    st.markdown(f"- **Regime: {_reg}** — composite {score:.1f}/100 "
+                f"(today's read {score_today:.1f}, 3-day average {score:.1f}).")
+    if _mover is not None and abs(_mover[1]) >= 0.5:
+        st.markdown(f"- **Biggest sleeve mover:** {_mover[0]} {_mover[1]:+.1f} "
+                    "pts since yesterday.")
+    else:
+        st.markdown("- **Biggest sleeve mover:** no sleeve moved more than "
+                    "0.5 pts since yesterday — a steady tape.")
+    st.markdown(f"- **Next catalyst:** {_nc_txt}.")
+    GL.show("Overview")
+
     c1, c2 = st.columns([1, 2])
     with c1:
         st.plotly_chart(gauge(score, "Composite Sentiment"), use_container_width=True)
@@ -456,11 +514,28 @@ with tabs[0]:
                                     line=dict(color="#1f77b4", width=2),
                                     name="Composite"))
         sfig.add_hline(y=50, line_dash="dot", line_color="#888")
+        EV.add_event_vlines(sfig, hdates.min(), hdates.max())
         sfig.update_layout(title="Past month", height=200,
                            margin=dict(t=30, b=10, l=10, r=10),
                            yaxis=dict(range=[0, 100]), xaxis_title="",
                            yaxis_title="")
         st.plotly_chart(sfig, use_container_width=True)
+        st.caption("Verticals: FOMC decisions (gray dash) · CPI releases "
+                   "(light dot).")
+        _hist_df = pd.DataFrame({"date": hdates, "composite": hist})
+        st.download_button("⬇ Composite history (CSV)",
+                           _hist_df.to_csv(index=False),
+                           "composite_history.csv", "text/csv",
+                           key="dl_composite_hist")
+        st.plotly_chart(SA.attribution_figure(breakdown, S.WEIGHTS),
+                        use_container_width=True)
+        _yd = SA.sleeve_deltas(components, past_comps[0])
+        if _yd:
+            _rows = sorted(_yd.items(), key=lambda kv: kv[1])
+            st.caption("Day-over-day sleeve change, in points (price-based "
+                       "sleeves only — Positioning, News and Macro use "
+                       "today-only inputs): " +
+                       "; ".join(f"{k} {v:+.1f}" for k, v in _rows) + ".")
     with c2:
         st.subheader("What drives the score")
         rows = [{"Component": k, "Score": round(v["score"], 1),
@@ -552,6 +627,7 @@ with tabs[0]:
 
 # ---------------- INDICES ----------------
 with tabs[1]:
+    GL.show("Indices")
     for name, df in idx.items():
         if df.empty:
             continue
@@ -583,6 +659,7 @@ with tabs[1]:
 # ---------------- VOLATILITY ----------------
 with tabs[2]:
     st.subheader("Volatility overview")
+    GL.show("Volatility")
     st.info(C.volatility_overview(vm["VIX"], vx["VVIX"], vx["SKEW"],
                                   vx["VIX 9D"], vx["VIX 3M"],
                                   spx_df=idx["S&P 500"],
@@ -751,6 +828,7 @@ with tabs[3]:
     st.subheader("US Macro — FRED")
     st.caption("Official macro series via the FRED API "
                "(Federal Reserve Bank of St. Louis).")
+    GL.show("Macro")
     try:
         econ = load_economy()
         econ_err = None
@@ -880,12 +958,11 @@ with tabs[3]:
 
         st.subheader("Labour Market")
         unrate = econ["UNRATE"]["value"]
-        u3m = unrate.rolling(3).mean()
-        sahm = u3m.iloc[-1] - u3m.tail(12).min() if len(u3m) >= 12 else None
+        sahm, _sahm_trig = SH.sahm_rule(unrate)
         lm_cols = st.columns(4)
         econ_cards(["UNRATE", "ICSA", "PAYEMS"], lm_cols[:3])
         with lm_cols[3]:
-            trig = sahm is not None and not pd.isna(sahm) and sahm >= 0.50
+            trig = _sahm_trig
             st.metric("Sahm rule",
                       f"{sahm:.2f}pp" if sahm is not None and not pd.isna(sahm) else "n/a",
                       "⚠️ above 0.50 trigger" if trig else "below 0.50 trigger",
@@ -933,6 +1010,7 @@ with tabs[3]:
 
 # ---------------- SECTOR ROTATION ----------------
 with tabs[4]:
+    GL.show("Sector Rotation")
     perf = []
     for name, df in sec.items():
         if df.empty:
@@ -976,6 +1054,7 @@ HEADLINE_RISK_BANDS = [
 ]
 
 with tabs[5]:
+    GL.show("News Risk")
     if news_err:
         st.warning(f"News feed unavailable: {news_err}")
     elif headlines:
@@ -1019,6 +1098,7 @@ with tabs[5]:
 
 # ---------------- ECONOMIC CALENDAR ----------------
 with tabs[6]:
+    GL.show("Economic Calendar")
     events, err = load_calendar()
     if err:
         st.warning(f"Calendar feed unavailable: {err}")
@@ -1082,6 +1162,7 @@ with tabs[6]:
 
 # ---------------- EARNINGS ----------------
 with tabs[7]:
+    GL.show("Earnings")
     earnings, err = load_earnings()
     if err:
         st.warning(f"Earnings feed unavailable: {err}")
@@ -1167,10 +1248,36 @@ with tabs[7]:
 # ---------------- GEX ----------------
 with tabs[8]:
     st.subheader("Gamma exposure (GEX)")
+    GL.show("GEX")
     st.caption("Dealer gamma positioning from listed option chains — SPY/QQQ/IWM "
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
                "dealers long gamma (dampens moves); negative = short gamma "
                "(amplifies moves). Nearest 3 expiries, prior-day open interest. [gex-v5]")
+
+    st.subheader("GEX history — SPY")
+    _gh = load_gex_history()
+    if _gh is None:
+        st.info("\U0001F4CA GEX history is being collected — check back once "
+                "a few daily snapshots land.")
+    else:
+        _gfig = make_subplots(specs=[[{"secondary_y": True}]])
+        _gfig.add_trace(go.Scatter(x=_gh["date"], y=_gh["net_gex_m"],
+                                   name="Net GEX ($M/pt)",
+                                   line=dict(color="#1f77b4", width=2)),
+                        secondary_y=False)
+        _gfig.add_trace(go.Scatter(x=_gh["date"], y=_gh["flip_dist"],
+                                   name="\u03b3flip distance (pts)",
+                                   line=dict(color="#f1c40f", width=1.5,
+                                             dash="dot")),
+                        secondary_y=True)
+        _gfig.update_layout(title="SPY — net GEX and \u03b3flip distance over time",
+                            height=320, margin=dict(t=40, b=10),
+                            legend=dict(orientation="h", y=1.02))
+        _gfig.update_yaxes(title_text="Net GEX ($M/pt)", secondary_y=False)
+        _gfig.update_yaxes(title_text="Spot \u2212 \u03b3flip (pts)",
+                           secondary_y=True)
+        st.plotly_chart(_gfig, use_container_width=True)
+        st.caption("Source: data/options_history.csv (daily archive).")
     for name, etf in [("S&P 500", "SPY"), ("Nasdaq 100", "QQQ"),
                       ("Russell 2000", "IWM")]:
         try:
@@ -1192,6 +1299,12 @@ with tabs[8]:
                                       f"({', '.join(g['expiries'])})"),
                         use_container_width=True)
         st.info(f"**Read:** {G.gex_read(g)}")
+        _strikes = g.get("strikes")
+        if _strikes is not None:
+            st.download_button("\u2B07 GEX by strike (CSV)",
+                               _strikes.to_csv(index=False),
+                               f"gex_by_strike_{etf.lower()}.csv", "text/csv",
+                               key=f"dl_gex_{etf}")
     st.caption("Method: per-contract gamma × open interest from CBOE delayed quotes "
                "(yfinance chains + Black-Scholes gamma as fallback). "
                "GEX = (call OI × call γ − put OI × put γ) × 100 × spot. "
@@ -1200,6 +1313,7 @@ with tabs[8]:
 
 with tabs[9]:
     st.subheader("Fed Watch — rate probabilities")
+    GL.show("Fed Watch")
     st.caption("Market-implied odds of Fed moves at upcoming FOMC meetings, "
                "stripped from 30-day Fed Funds futures (CME ZQ).")
     st.markdown(f"**Last FOMC decision:** {F.last_decision_text()}")
@@ -1246,7 +1360,12 @@ with tabs[9]:
             st.plotly_chart(fed_rates_5y_chart(rates5y),
                             use_container_width=True)
             st.caption("Daily; shaded band = FOMC target range. Source: FRED "
-                       "(DFEDTARU, DFEDTARL, DFF).")
+                       "(DFEDTARU, DFEDTARL, DFF). "
+                       "Verticals: FOMC decisions (gray dash) \u00b7 CPI releases "
+                       "(light dot).")
+            st.download_button("\u2B07 Fed funds 5y (CSV)", rates5y.to_csv(),
+                               "fed_funds_5y.csv", "text/csv",
+                               key="dl_rates5y")
         st.caption("Method: implied avg rate = 100 − ZQ futures price; expected "
                    "post-meeting rate strips out pre-decision days (chained across "
                    "meetings); expected move split across adjacent 25bp buckets. "

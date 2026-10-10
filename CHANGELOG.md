@@ -1,3 +1,22 @@
+## 2026-10-10 — Briefing card, sleeve attribution, Sahm module, GEX history, event markers, glossaries, CSV exports
+- New "Today's briefing" card at the top of Overview: regime + gauge reading,
+  biggest single-sleeve day-over-day mover, and the next catalyst with countdown.
+- New sleeve-attribution chart under the composite gauge: per-sleeve point
+  contribution vs the neutral-50 baseline (green adds, red drags), plus a
+  day-over-day sleeve-change line for price-based sleeves (Positioning, News
+  and Macro use today-only inputs and are excluded). Logic in new
+  `src/sentiment_attrib.py`.
+- Sahm rule moved into a new `src/sahm.py` module (same math; the Macro tab's
+  metric card and labor read are unchanged).
+- New GEX history section: trailing SPY net GEX and γflip distance read from
+  `data/options_history.csv`; shows a friendly "collecting" note until the
+  daily archive has data.
+- Event markers on the 5-year Fed funds chart and the composite sparkline:
+  gray dashed = FOMC decisions, light dotted = CPI releases (`src/events.py`).
+- "What am I looking at?" glossary expanders on all 10 tabs (`src/glossary.py`).
+- CSV downloads: composite history (Overview), 5-year Fed funds series
+  (Fed Watch), GEX-by-strike per ETF (GEX tab).
+
 ## 2026-10-08 — Fed Watch: trailing 5-year rate chart
 - New chart at the bottom of the Fed Watch tab: trailing 5 years of the
   federal funds rate — FOMC target range as a shaded band with the daily
