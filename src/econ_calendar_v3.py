@@ -141,17 +141,23 @@ def _impact(name: str) -> str:
 
 
 def _direction(name: str, description: str) -> int:
-    """+1 if a higher reading is favourable, -1 if lower is, 0 if unknown."""
-    m = re.search(
-        r"A (higher|lower) than expected reading should be taken as "
-        r"(positive|negative)", description or "")
-    if m:
-        return 1 if (m.group(1) == "higher") == (m.group(2) == "positive") else -1
+    """+1 if a higher reading is favourable, -1 if lower is, 0 if unknown.
+
+    Curated keyword lists win over the feed description: Nasdaq frames
+    direction as currency impact ("higher than expected = positive for the
+    USD"), which is backwards for inflation releases — a hotter CPI is bad,
+    not good. Indicators not in the lists fall back to the description.
+    """
     n = name.lower()
     if any(k in n for k in _NEUTRAL):
         return 0
     if any(k in n for k in _LOWER_BETTER):
         return -1
+    m = re.search(
+        r"A (higher|lower) than expected reading should be taken as "
+        r"(positive|negative)", description or "")
+    if m:
+        return 1 if (m.group(1) == "higher") == (m.group(2) == "positive") else -1
     return 1
 
 

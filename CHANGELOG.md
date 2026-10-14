@@ -1,3 +1,6 @@
+## 2026-10-14 — CPI verdicts: hotter = red, cooler = green
+- Economic calendar: inflation releases (CPI, Core CPI, PPI, PCE) now show red when the actual beats forecast and green when it comes in below. Previously the feed's currency framing ("higher = positive for the USD") overrode the app's own lower-is-better rule, so this morning's hot core CPI (0.3% vs 0.2%) wrongly showed green. Module renamed `src/econ_calendar_v2.py` → `src/econ_calendar_v3.py` to force a fresh import on Cloud.
+
 ## 2026-10-10 — Briefing card, sleeve attribution, Sahm module, GEX history, event markers, glossaries, CSV exports
 - New "Today's briefing" card at the top of Overview: regime + gauge reading,
   biggest single-sleeve day-over-day mover, and the next catalyst with countdown.

@@ -21,7 +21,7 @@ from src import glossary as GL
 from src import sahm as SH
 from src import sentiment_v2 as S
 from src import sentiment_attrib as SA
-from src.econ_calendar_v2 import fetch_calendar
+from src.econ_calendar_v3 import fetch_calendar
 from src.data import (
     CROSS_ASSETS,
     DEFENSIVE_SECTORS,
