@@ -123,6 +123,23 @@ VERB_AWARE: dict[str, tuple[frozenset, frozenset, float, float, float]] = {
                    "soar", "soars", "soaring"}),
         0.3, -0.4, 0.8,
     ),
+    # Analyst price targets: direction comes from the verb. Bare mention
+    # is neutral; raises are relief, cuts are risk.
+    "price target": (
+        frozenset({"raises", "raise", "raised", "raising",
+                   "lifts", "lift", "lifted",
+                   "hikes", "hike", "hiked",
+                   "boosts", "boost", "boosted",
+                   "bumps", "bump", "bumped", "ups", "upped",
+                   "upgrade", "upgrades", "upgraded"}),
+        frozenset({"cuts", "cut", "cutting",
+                   "slashes", "slash", "slashed", "slashing",
+                   "lowers", "lower", "lowered", "lowering",
+                   "trims", "trim", "trimmed",
+                   "reduces", "reduce", "reduced", "reducing",
+                   "downgrade", "downgrades", "downgraded"}),
+        0.0, -0.4, 0.6,
+    ),
 }
 
 # Negators / reversal verbs: flip a nearby keyword hit (checked ±3 words).

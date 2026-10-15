@@ -1,3 +1,6 @@
+## 2026-10-15 — News Risk: analyst price-target headlines now scored by verb
+- Price-target headlines are now verb-aware: raises/lifts/hikes/boosts → relief (−0.4), cuts/slashes/lowers/trims/downgrades → risk (+0.6), bare mentions stay neutral (0.0). Previously these headlines scored neutral regardless of direction.
+
 ## 2026-10-14 — CPI verdicts: hotter = red, cooler = green
 - Economic calendar: inflation releases (CPI, Core CPI, PPI, PCE) now show red when the actual beats forecast and green when it comes in below. Previously the feed's currency framing ("higher = positive for the USD") overrode the app's own lower-is-better rule, so this morning's hot core CPI (0.3% vs 0.2%) wrongly showed green. Module renamed `src/econ_calendar_v2.py` → `src/econ_calendar_v3.py` to force a fresh import on Cloud.
 
