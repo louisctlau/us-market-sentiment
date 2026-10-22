@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from plotly.subplots import make_subplots
 
-from src import commentary as C
+from src import commentary_v2 as C
 from src import events as EV
 from src import fedwatch as F
 from src import fmp as FMP
