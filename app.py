@@ -21,6 +21,8 @@ from src import glossary as GL
 from src import sahm as SH
 from src import sentiment_v2 as S
 from src import sentiment_attrib as SA
+from src import earnings_iv as EIV
+from src import history as H
 from src.econ_calendar_v3 import fetch_calendar
 from src.data import (
     CROSS_ASSETS,
@@ -37,7 +39,7 @@ from src.data import (
 )
 from src.earnings import fetch_earnings
 from src.news import fetch_headlines, risk_meter
-from src.technicals import rsi, sma, technical_snapshot
+from src.technicals import ordinal, rsi, sma, technical_snapshot
 from src.vix_futures import fetch_vix_futures_curve
 
 # NYSE full-day closures (weekends are handled separately). Extend yearly.
@@ -81,6 +83,13 @@ st.markdown(
     "[data-testid='stSidebarNav']{display:none;}"  # tab-based app; sidebar is the catalysts panel
     "[data-testid='stSidebarUserContent']{display:flex;flex-direction:column;}"
     ".sidebar-spacer{flex:1 1 auto;min-height:2rem;}"
+    # Mobile pass: on phone-width screens every column row stacks full
+    # width so the gauge and key metrics read top-to-bottom.
+    "@media (max-width:768px){"
+    "[data-testid='stHorizontalBlock']{flex-wrap:wrap;}"
+    "[data-testid='column']{min-width:100%!important;flex:1 1 100%!important;}"
+    "h1{font-size:1.55rem!important;}"
+    "}"
     "</style>",
     unsafe_allow_html=True)
 st.title("US Market Sentiment Dashboard")
@@ -299,6 +308,30 @@ def load_earnings():
         return [], str(e)
 
 
+@st.cache_data(ttl=3600)
+def load_history():
+    return H.load_history()
+
+
+@st.cache_data(ttl=3600)
+def load_implied(ticker: str, edate: str, time_hint: str):
+    # Options-implied earnings move from the live CBOE chain; None on any
+    # failure so one bad chain can't break the Earnings tab.
+    try:
+        return EIV.implied_move(ticker, edate, time_hint)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=21600)
+def load_nfci():
+    # Chicago Fed NFCI (weekly) for the Macro tab; None on failure/no key.
+    try:
+        return FR.get_series("NFCI", observation_start="2020-01-01")
+    except Exception:
+        return None
+
+
 # Revenue columns are hidden until a viable free source is available.
 # FMP's free tier covers only a handful of names per week and its
 # analyst-estimates endpoint is paid-only (verified 2026-10-02).
@@ -480,9 +513,13 @@ snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
 tabs = st.tabs(["Overview", "Indices", "Volatility", "Macro",
                 "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
                 "GEX", "Fed Watch"])
+_DATA_ASOF = data_ts.astimezone(ZoneInfo("America/Toronto")).strftime(
+    "%b %d, %Y · %I:%M %p ET")
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
+    st.caption(f"Data as of {_DATA_ASOF} · composite & sleeves from live feeds; "
+               "history panels read data/history.json.")
     # --- Today's briefing: 3-bullet synthesis ---
     _reg = S.regime(score)
     _deltas = SA.sleeve_deltas(components, past_comps[0])
@@ -554,19 +591,98 @@ with tabs[0]:
                    ", ".join(f"{k} {int(w * 100)}%"
                              for k, w in S.WEIGHTS.items()) + ".")
 
-    st.subheader("Market commentary")
-    ctx = {
-        "score": score, "regime": S.regime(score), "breakdown": breakdown,
-        "fear": fear, "rot": rot, "rot_detail": rot_detail,
-        "headline_meter": headline_meter,
-        "vix": vm["VIX"], "y10": vm["US 10Y Yield"], "dxy": vm["DXY (USD Index)"],
-        "snaps": snaps,
-    }
-    st.info(C.market_commentary(ctx))
-    st.markdown("**Macro in context — where each stands vs the past year:**")
-    st.markdown("- " + C.vix_commentary(vm["VIX"]))
-    st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
-    st.markdown("- " + C.yield_commentary(vm["US 10Y Yield"], vm["US 5Y Yield"]))
+    # --- What changed vs the latest daily history record ---
+    st.subheader("What changed")
+    _hist = load_history()
+    _prev = H.latest_record(_hist, before=_today.isoformat())
+    if not _prev or not _prev.get("sleeves"):
+        st.info("Daily history is still accumulating — the first snapshot "
+                "lands after today's close.")
+    else:
+        _psleeves = _prev.get("sleeves") or {}
+        _seeded = _prev.get("src") == "backtest_v2"
+        _wrows, _drivers = [], []
+        for _nm in H.SLEEVES:
+            _cur = float(components[_nm][0])
+            _pv = _psleeves.get(_nm)
+            if _pv is None or (_seeded and _nm in ("Positioning", "News")):
+                _wrows.append({"Sleeve": _nm, "Today": round(_cur, 1),
+                               "Prior": "—", "Δ pts": "—"})
+                continue
+            _d = _cur - float(_pv)
+            _wrows.append({"Sleeve": _nm, "Today": round(_cur, 1),
+                           "Prior": round(float(_pv), 1),
+                           "Δ pts": f"{_d:+.1f}"})
+            _drivers.append((_nm, _d * S.WEIGHTS[_nm], _d))
+        _pc = _prev.get("composite")
+        if _pc is not None:
+            _dc = score_today - float(_pc)
+            _dc_txt = (f":green[▲ {_dc:+.1f} pts]" if _dc >= 0
+                       else f":red[▼ {_dc:+.1f} pts]")
+            st.markdown(f"**Composite (today's read):** {score_today:.1f} vs "
+                        f"{float(_pc):.1f} on {_prev['date']} — {_dc_txt}")
+        if _drivers:
+            _top = sorted(_drivers, key=lambda x: abs(x[1]), reverse=True)[:3]
+            _bits = [f"{_nm} {'▲' if _d >= 0 else '▼'} {_d:+.1f} pts"
+                     for _nm, _contrib, _d in _top]
+            st.markdown("**Top drivers of the move:** " + " · ".join(_bits) + ".")
+        st.dataframe(pd.DataFrame(_wrows), use_container_width=True, hide_index=True)
+        if _seeded:
+            st.caption("Prior record is the v2 backtest seed (through Sep 29, 2026) — "
+                       "Positioning and News had no live history then, and the deltas "
+                       "span the gap until live snapshots accumulate. Live daily "
+                       "snapshots accrue from Oct 22, 2026.")
+        else:
+            st.caption(f"Prior record: daily snapshot for {_prev['date']} "
+                       "(recorded weekdays after the close).")
+
+    # --- Regime history: percentiles + extremes log ---
+    with st.expander("Regime history & extremes log"):
+        _recs = H.records(_hist)
+        _p1, _n1 = H.percentile_of(score_today, _recs, 365)
+        _p5, _n5 = H.percentile_of(score_today, _recs, 1825)
+        if _p1 is not None and _p5 is not None:
+            st.markdown(f"Today's composite ({score_today:.1f}) sits at the "
+                        f"**{ordinal(round(_p1))} percentile** of the past year "
+                        f"({_n1} trading days) and the "
+                        f"**{ordinal(round(_p5))} percentile** "
+                        f"of the past five years ({_n5} trading days).")
+        _recent = [r for r in _recs
+                   if r["date"] >= (_today - timedelta(days=1825)).isoformat()]
+        if _recent:
+            _hfig = go.Figure(go.Scatter(
+                x=[r["date"] for r in _recent],
+                y=[r["composite"] for r in _recent],
+                mode="lines", line=dict(color="#1f77b4", width=1.5),
+                name="Composite"))
+            _hfig.add_hline(y=70, line_dash="dash", line_color="#2ecc71")
+            _hfig.add_hline(y=30, line_dash="dash", line_color="#e74c3c")
+            _hfig.update_layout(title="Composite — past 5 years (daily)",
+                                height=260, margin=dict(t=40, b=10, l=10, r=10),
+                                yaxis=dict(range=[0, 100]),
+                                xaxis_title="", yaxis_title="")
+            st.plotly_chart(_hfig, use_container_width=True)
+        _ext = H.extremes(_recs)
+        if _ext:
+            _erows = [{"Date": e["date"],
+                       "Composite": f"{e['composite']:.1f}",
+                       "Regime": ("Risk-On" if e["composite"] >= 70
+                                  else "Extreme Fear"),
+                       "SPY close": (f"{e['spy_close']:,.2f}"
+                                     if e.get("spy_close") else "—"),
+                       "SPY +20d": (f"{e['fwd20_pct']:+.1f}%"
+                                    if e.get("fwd20_pct") is not None
+                                    else "pending")}
+                      for e in _ext]
+            st.dataframe(pd.DataFrame(_erows), use_container_width=True,
+                         hide_index=True)
+            st.caption(f"{len(_ext)} extreme days shown (composite ≥ 70 or ≤ 30), "
+                       "newest first. History 2015 – Sep 2026 is the v2 backtest "
+                       "seed — Positioning and News score neutral 50 there (no live "
+                       "history), so seeded extremes read slightly milder than live "
+                       "ones would. Live snapshots accrue from Oct 22, 2026.")
+        else:
+            st.caption("No extreme days in the recorded history yet.")
 
     st.subheader("Market snapshot")
     cols = st.columns(4)
@@ -587,12 +703,26 @@ with tabs[0]:
                 f"font-weight:600;font-size:0.85rem;'>"
                 f"{arrow} {ret:+.2f}% today</span>",
                 unsafe_allow_html=True)
+    st.subheader("Market commentary")
+    ctx = {
+        "score": score, "regime": S.regime(score), "breakdown": breakdown,
+        "fear": fear, "rot": rot, "rot_detail": rot_detail,
+        "headline_meter": headline_meter,
+        "vix": vm["VIX"], "y10": vm["US 10Y Yield"], "dxy": vm["DXY (USD Index)"],
+        "snaps": snaps,
+    }
+    st.info(C.market_commentary(ctx))
+    st.markdown("**Macro in context — where each stands vs the past year:**")
+    st.markdown("- " + C.vix_commentary(vm["VIX"]))
+    st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
+    st.markdown("- " + C.yield_commentary(vm["US 10Y Yield"], vm["US 5Y Yield"]))
+
+    st.subheader("Key levels — past year")
     mcols = st.columns(3)
     for col, (label, df, fmt) in zip(
-            mcols,
+            mcols[:2],
             [("VIX", vm["VIX"], "{:.1f}"),
-             ("DXY", vm["DXY (USD Index)"], "{:.1f}"),
-             ("US 10Y", vm["US 10Y Yield"], "{:.2f}%")]):
+             ("DXY", vm["DXY (USD Index)"], "{:.1f}")]):
         with col:
             if df.empty:
                 st.metric(label, "n/a")
@@ -604,6 +734,24 @@ with tabs[0]:
                              extra={"50-day avg": ma50})
             fig.update_layout(height=240, margin=dict(t=35, b=10))
             st.plotly_chart(fig, use_container_width=True)
+    with mcols[2]:
+        # Displayed 10Y = FRED DGS10 official close via the shared accessor
+        # (load_ten_year) — the same value Fed Watch and Macro show. The
+        # chart is Yahoo ^TNX (intraday) and is labelled as such.
+        _s10 = load_ten_year()
+        if _s10:
+            st.metric("US 10Y", f"{_s10[0]:.2f}%",
+                      help=f"FRED DGS10 close as of {_s10[1]} — same series "
+                           "as Fed Watch & Macro")
+        else:
+            st.metric("US 10Y", "n/a")
+        _y10 = vm["US 10Y Yield"]
+        if not _y10.empty:
+            _fig = line_chart(_y10, "US 10Y — past year (Yahoo ^TNX, intraday)",
+                              extra={"50-day avg":
+                                     _y10["close"].rolling(50).mean()})
+            _fig.update_layout(height=240, margin=dict(t=35, b=10))
+            st.plotly_chart(_fig, use_container_width=True)
 
     st.subheader("Fear context & rotation")
     f1, f2 = st.columns(2)
@@ -623,7 +771,16 @@ with tabs[0]:
                ("WTI Crude", xa["WTI Crude Oil"], "${:.1f}"),
                ("Gold", xa["Gold"], "${:.0f}"),
                ("US 10Y", vm["US 10Y Yield"], "{:.2f}%")]
+    _s10x = load_ten_year()
     for col, (label, df, fmt) in zip(xa_cols, xa_defs):
+        if label == "US 10Y":
+            # Same shared FRED DGS10 close as everywhere else (see above).
+            if _s10x:
+                col.metric("US 10Y", f"{_s10x[0]:.2f}%",
+                           help=f"FRED DGS10 close as of {_s10x[1]}")
+            else:
+                col.metric("US 10Y", "n/a")
+            continue
         if df.empty:
             col.metric(label, "n/a")
             continue
@@ -634,6 +791,7 @@ with tabs[0]:
 
 # ---------------- INDICES ----------------
 with tabs[1]:
+    st.caption(f"Data as of {_DATA_ASOF} · Yahoo Finance daily bars.")
     GL.show("Indices")
     for name, df in idx.items():
         if df.empty:
@@ -666,6 +824,9 @@ with tabs[1]:
 # ---------------- VOLATILITY ----------------
 with tabs[2]:
     st.subheader("Volatility overview")
+    st.caption(f"Data as of {_DATA_ASOF}"
+               + (f" · VX futures curve as of {vx_fut_asof:%b %d, %Y} (CBOE)"
+                  if vx_fut_asof else ""))
     GL.show("Volatility")
     st.info(C.volatility_overview(vm["VIX"], vx["VVIX"], vx["SKEW"],
                                   vx["VIX 9D"], vx["VIX 3M"],
@@ -873,6 +1034,9 @@ with tabs[3]:
         heads, asofs = {}, {}
         for sid in FR.ECON_SERIES:
             heads[sid], asofs[sid] = FR.headline_value(sid, econ[sid])
+        _econ_asof = max(df.index[-1] for df in econ.values())
+        st.caption(f"FRED data as of {_econ_asof:%b %d, %Y} (latest series date) · "
+                   "each card's tooltip shows its own as-of date.")
 
         def econ_cards(sids, cols=None):
             cols = cols or st.columns(len(sids))
@@ -1000,8 +1164,29 @@ with tabs[3]:
         econ_cards(["GDP"])
         econ_chart("GDP")
 
+        st.subheader("Financial Conditions — Chicago Fed NFCI")
+        nfci = load_nfci()
+        if nfci is None or nfci.empty:
+            st.caption("NFCI unavailable right now.")
+        else:
+            nv = nfci["value"].dropna()
+            nlast = float(nv.iloc[-1])
+            nasof = nv.index[-1]
+            st.metric("NFCI (weekly)", f"{nlast:+.2f}",
+                      help=f"As of {nasof:%b %d, %Y}")
+            nfig = go.Figure(go.Scatter(x=nv.index[-260:], y=nv.iloc[-260:],
+                                        line=dict(width=2)))
+            nfig.add_hline(y=0, line_dash="dash", line_color="gray")
+            nfig.update_layout(title="NFCI — 5 years (above 0 = tighter than average)",
+                               height=300, margin=dict(t=40, b=10))
+            st.plotly_chart(nfig, use_container_width=True)
+            st.caption("Chicago Fed National Financial Conditions Index: 105 weekly "
+                       "financial indicators standardized — positive values mean "
+                       "conditions are tighter than their historical (1971–) average, "
+                       "negative looser. Source: FRED (NFCI).")
+
         st.caption("Series IDs: " + ", ".join(
-            dict.fromkeys(list(FR.ECON_SERIES) +
+            dict.fromkeys(list(FR.ECON_SERIES) + ["NFCI"] +
                           [sid for sid, _yrs in FR.YIELD_CURVE_SERIES.values()])) +
             ". Source: FRED API, Federal Reserve Bank of St. Louis.")
 
@@ -1017,6 +1202,7 @@ with tabs[3]:
 
 # ---------------- SECTOR ROTATION ----------------
 with tabs[4]:
+    st.caption(f"Data as of {_DATA_ASOF} · Yahoo Finance sector ETFs.")
     GL.show("Sector Rotation")
     perf = []
     for name, df in sec.items():
@@ -1100,11 +1286,67 @@ with tabs[5]:
                          "bullish": "🟢"}[h["risk"]]
                 st.markdown(f"`{h['published']}` {badge} **[{h['source']}]** "
                             f"{h['title']} — {h['risk_reason']}")
+        st.subheader("Headline risk — daily trend")
+        _ns = H.news_series(H.records(load_history()), 30)
+        if len(_ns) >= 2:
+            _nfig = go.Figure(go.Scatter(
+                x=[r["date"] for r in _ns], y=[r["news_risk"] for r in _ns],
+                mode="lines+markers", line=dict(color="#e67e22", width=2),
+                name="Headline Risk"))
+            _nfig.add_hline(y=80, line_dash="dash", line_color="#e74c3c")
+            _nfig.update_layout(title="Headline Risk gauge — daily snapshots (last 30)",
+                                height=240, margin=dict(t=40, b=10, l=10, r=10),
+                                yaxis=dict(range=[0, 100]),
+                                xaxis_title="", yaxis_title="")
+            st.plotly_chart(_nfig, use_container_width=True)
+            st.caption("One point per weekday snapshot (recorded after the close). "
+                       "History accrues from Oct 22, 2026 — no backfill exists for "
+                       "a live headline gauge.")
+        elif _ns:
+            st.caption(f"Daily gauge history accrues from Oct 22, 2026 — "
+                       f"{len(_ns)} snapshot so far (latest {_ns[-1]['news_risk']:.0f}). "
+                       "The trend chart appears once a few days land.")
+        else:
+            st.caption("Daily gauge history accrues from Oct 22, 2026 — "
+                       "one point per weekday snapshot.")
+
+        st.subheader("Recurring themes in today's headlines")
+        _THEMES = {
+            "Tariffs & trade": ("tariff", "trade war", "trade deal"),
+            "Fed & rates": ("fed", "fomc", "rate cut", "rate hike",
+                            "powell", "warsh"),
+            "Inflation": ("inflation", "cpi", "prices"),
+            "Yields & bonds": ("yield", "treasury", "bond"),
+            "Oil & energy": ("oil", "opec", "crude", "gasoline"),
+            "AI & chips": (" ai ", "artificial intelligence", "nvidia",
+                           "chip", "semiconductor"),
+            "Earnings & guidance": ("earnings", "guidance", "revenue", "profit"),
+            "Geopolitics": ("war", "missile", "sanction", "attack", "ceasefire"),
+        }
+        _counts: dict[str, int] = {}
+        for _lbl, _kws in _THEMES.items():
+            _n = sum(1 for h in headlines
+                     if any(k in f" {h['title'].lower()} " for k in _kws))
+            if _n:
+                _counts[_lbl] = _n
+        if _counts:
+            _tfig = go.Figure(go.Bar(
+                x=list(_counts.values()), y=list(_counts.keys()),
+                orientation="h", marker_color="#1f77b4"))
+            _tfig.update_layout(
+                title=f"Headlines mentioning each theme (of {len(headlines)} fetched)",
+                height=280, margin=dict(t=40, b=10, l=10, r=10),
+                xaxis_title="Headlines")
+            st.plotly_chart(_tfig, use_container_width=True)
+        else:
+            st.caption("No tracked themes in today's headlines.")
     else:
         st.info("No headlines right now.")
 
 # ---------------- ECONOMIC CALENDAR ----------------
 with tabs[6]:
+    st.caption(f"Data as of {datetime.now(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} "
+               "(cached up to 1h) · Source: Nasdaq.")
     GL.show("Economic Calendar")
     events, err = load_calendar()
     if err:
@@ -1169,6 +1411,8 @@ with tabs[6]:
 
 # ---------------- EARNINGS ----------------
 with tabs[7]:
+    st.caption(f"Data as of {datetime.now(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} "
+               "(cached up to 1h) · Source: Nasdaq; implied moves: CBOE delayed chain.")
     GL.show("Earnings")
     earnings, err = load_earnings()
     if err:
@@ -1249,6 +1493,47 @@ with tabs[7]:
             st.dataframe(pd.DataFrame(rows),
                          use_container_width=True, hide_index=True)
         st.caption("Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap.")
+
+        st.subheader("Implied-move scorecard — chain names")
+        _CHAIN = {"NVDA", "AMD", "MU", "AAPL", "META", "GOOG", "GOOGL"}
+        _up = [e for e in upcoming if (e.get("symbol") or "").upper() in _CHAIN]
+        if _up:
+            _urows = []
+            for e in _up:
+                _sym = (e.get("symbol") or "").upper()
+                _iv = load_implied(_sym, e.get("date", ""), e.get("time") or "")
+                _urows.append({
+                    "Date": e.get("date", ""), "Symbol": _sym,
+                    "Time": e.get("time") or "—",
+                    "Implied move": (f"±{_iv['implied_pct']:.1f}%"
+                                     if _iv else "n/a"),
+                    "Straddle expiry": (_iv["expiry"] if _iv else "—")})
+            st.dataframe(pd.DataFrame(_urows), use_container_width=True,
+                         hide_index=True)
+        else:
+            st.caption("No chain-name prints (NVDA, AMD, MU, AAPL, META, GOOG) "
+                       "in the next 7 days.")
+        _ents = [e for e in H.earnings_entries(load_history())
+                 if e.get("date", "") <= today_str]
+        if _ents:
+            _srows = []
+            for e in reversed(_ents):
+                _imp, _real = e.get("implied_pct"), e.get("realized_pct")
+                _srows.append({
+                    "Date": e.get("date", ""), "Symbol": e.get("ticker", ""),
+                    "Implied": (f"±{_imp:.1f}%" if _imp is not None else "—"),
+                    "Actual move": (f"{_real:.1f}%" if _real is not None
+                                    else "pending"),
+                    "Result": ("—" if _real is None or _imp is None else
+                               "within implied" if _real <= _imp
+                               else "beyond implied")})
+            st.dataframe(pd.DataFrame(_srows), use_container_width=True,
+                         hide_index=True)
+        st.caption("Implied = ATM straddle ÷ spot from the CBOE delayed chain, "
+                   "captured before the print — never backfilled. Actual = "
+                   "close-to-close move across the reaction session. Scorecard "
+                   "accrues via the daily snapshot; META's Oct 21, 2026 implied "
+                   "was reconstructed from the Oct 20 chain archive.")
     else:
         st.info("No notable earnings in the last day / next 7 days.")
 
@@ -1260,6 +1545,8 @@ with tabs[8]:
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
                "dealers long gamma (dampens moves); negative = short gamma "
                "(amplifies moves). Nearest 3 expiries, prior-day open interest. [gex-v5]")
+    st.caption("Chain data: CBOE delayed quotes (~15 min), cached up to 1h — "
+               "↻ Refresh reloads.")
 
     st.subheader("GEX history — SPY")
     _gh = load_gex_history()
@@ -1345,6 +1632,9 @@ with tabs[9]:
                   f"{ten[0]:.2f}%" if ten else "n/a",
                   help=(f"FRED DGS10 as of {ten[1]}" if ten
                         else "FRED DGS10 unavailable"))
+        st.caption(f"Odds stripped from ZQ futures on page load · effective rate "
+                   f"as of {fw['effective_date']} · 10Y is FRED DGS10 — the same "
+                   "series Overview and Macro display.")
         try:
             fwh = load_fedwatch_history()
         except Exception:

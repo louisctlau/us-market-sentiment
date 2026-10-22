@@ -104,7 +104,7 @@ def yield_commentary(y10_df: pd.DataFrame, y5_df: pd.DataFrame) -> str:
             "supportive for equities."
             if (chg_pp or 0) < -0.25 else
             "Yields are range-bound — rates are background noise for now.")
-    return (f"**US 10Y {last:.2f}% — {_ord(int(round(pr)))} percentile of its 1-year range "
+    return (f"**US 10Y (intraday ^TNX) {last:.2f}% — {_ord(int(round(pr)))} percentile of its 1-year range "
             f"({lo:.2f}–{hi:.2f}%), {trend}{chg_txt}.{spread_txt} {read}")
 
 
