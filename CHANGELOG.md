@@ -1,3 +1,16 @@
+## 2026-10-30 — Put/call panel (SPY open interest)
+- New "Put/call — SPY open interest" section on the GEX tab: total put OI
+  ÷ total call OI across the full SPY chain, from the daily options
+  archive, with the trailing median as the reference line. Latest 2.14
+  against a 2.18 median — put hedging lighter than usual. Read against
+  its own range, not a 1.0 line: SPY puts run structurally heavy for
+  hedging (series range 2.11–2.32 since Oct 10).
+- The ratio is computed by the archive builder
+  (`scripts/build_options_history.py` in the asset-mix repo) as new
+  `put_oi` / `call_oi` / `pc_oi` columns, so it refreshes with the daily
+  archive run; the local `data/options_history.csv` fallback copy is
+  synced to the same build (it was stale at Oct 9, with no SPY rows).
+
 ## 2026-10-22 — History store, What-changed panel, regime history, earnings scorecard, NFCI, one 10Y everywhere, alerts, mobile pass
 - New daily history store (`data/history.json`, logic in `src/history.py`): one record per trading day — composite, all 8 sleeves, News Risk gauge, SPY close and SPY γflip/net GEX. Seeded with the v2 backtest (daily 2015 – Sep 29, 2026; Positioning/News neutral 50 in the seed — no live history exists for those days). A VM job (`scripts/daily_snapshot.py`, weekdays after the close) appends live snapshots and pushes the file; the app only reads it.
 - Overview — new "What changed" panel: today's sleeve scores vs the latest history record for all 8 sleeves, the composite delta, and the top 3 drivers of the move.

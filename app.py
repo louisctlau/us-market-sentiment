@@ -1572,6 +1572,32 @@ with tabs[8]:
                            secondary_y=True)
         st.plotly_chart(_gfig, use_container_width=True)
         st.caption("Source: data/options_history.csv (daily archive).")
+
+    st.subheader("Put/call — SPY open interest")
+    if _gh is not None and "pc_oi" in _gh.columns \
+            and _gh["pc_oi"].notna().any():
+        _pc = _gh.dropna(subset=["pc_oi"]).sort_values("date")
+        _latest_pc = float(_pc["pc_oi"].iloc[-1])
+        _med_pc = float(_pc["pc_oi"].median())
+        _pfig = go.Figure()
+        _pfig.add_trace(go.Scatter(x=_pc["date"], y=_pc["pc_oi"],
+                                   name="Put/call OI ratio",
+                                   line=dict(color="#8e44ad", width=2)))
+        _pfig.add_hline(y=_med_pc, line_dash="dot",
+                        annotation_text=f"Trailing median {_med_pc:.2f}")
+        _pfig.update_layout(title="SPY — put/call open-interest ratio",
+                            height=280, margin=dict(t=40, b=10))
+        st.plotly_chart(_pfig, use_container_width=True)
+        _vs = "heavier" if _latest_pc > _med_pc else "lighter"
+        st.write(f"Latest **{_latest_pc:.2f}** (trailing median "
+                 f"{_med_pc:.2f}) — put hedging {_vs} than usual. SPY puts "
+                 f"run structurally heavy for hedging, so read this against "
+                 f"its own range, not a 1.0 line.")
+        st.caption("Source: data/options_history.csv (daily archive; total "
+                   "put OI ÷ total call OI across the full SPY chain).")
+    else:
+        st.info("Put/call history is being collected — it appears once the "
+                "daily archive rebuild carries the ratio.")
     for name, etf in [("S&P 500", "SPY"), ("Nasdaq 100", "QQQ"),
                       ("Russell 2000", "IWM")]:
         try:
