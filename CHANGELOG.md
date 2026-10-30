@@ -230,3 +230,13 @@
 
 ## 2026-09-25 — GEX convention finalized
 - Net GEX uses the standard convention (calls +, puts −; dealers long calls / short puts): (call OI × call γ − put OI × put γ) × 100 × spot.
+
+## 2026-09-24 — App launch
+- US market sentiment dashboard published: composite gauge with sleeve
+  scores, Overview trend charts (VIX, DXY, US 10Y with 50-day averages),
+  market snapshot, data-driven commentary with a major-risk callout, GEX
+  tab (dealer gamma exposure by strike for SPY/QQQ/IWM with put/call walls
+  and zero-gamma, from live CBOE delayed quotes), Fed Watch tab
+  (futures-implied hike/cut probabilities with 90-day history per meeting),
+  fear-context and risk-off-rotation gauges, cross-asset strip, earnings
+  calendar, and a data refresh timestamp under the header.
