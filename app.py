@@ -309,7 +309,16 @@ def load_earnings():
 
 
 @st.cache_data(ttl=3600)
-def load_history():
+def load_history(mtime=None):
+    """Daily history store (data/history.json).
+
+    `mtime` is the file's modification time, passed by callers: the daily
+    snapshot cron rewrites the file after the close, and the mtime in the
+    cache key makes a fragment re-run pick the new records up immediately
+    instead of serving the pre-change read until the TTL expires. (The name
+    has no leading underscore on purpose: Streamlit excludes
+    underscore-prefixed args from the cache key, which would silently
+    defeat this.)"""
     return H.load_history()
 
 
@@ -415,22 +424,11 @@ def line_chart(df: pd.DataFrame, title: str, extra: dict | None = None) -> go.Fi
     return fig
 
 
-idx, vm, vx, sec, xa, br, rot_data, data_ts = load_data()
-vx_fut, vx_fut_asof, vx_fut_err = load_vix_futures()
-sfred = load_score_fred()
-cr5y = load_credit_5y()
-failed = sorted({name for group in (idx, vm, vx, sec, xa, br)
-                 for name, df in group.items() if df.empty})
-if failed:
-    st.warning(f"Data unavailable for: {', '.join(failed)} — "
-               "affected widgets show neutral values.")
-col_ts, col_btn = st.columns([5, 1])
-with col_ts:
-    st.caption(f"Data refreshed {data_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} · use ↻ Refresh to reload")
-with col_btn:
-    if st.button("↻ Refresh", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+# All data loading lives in load_dashboard_state() below (after
+# build_components / composite_history, which it needs), so the tab
+# fragments can reload fresh state on their timer without re-running the
+# whole page. The header (as-of stamp + manual refresh button) is rendered
+# from the bundle right after the call.
 def _cut(df, n):
     """Truncate a frame by n trailing rows (lagged score recomputation).
     Returns the full frame when there isn't enough history to lag."""
@@ -475,40 +473,176 @@ def build_components(n=0, gex=None, fed=None, news_meter=None):
     }
 
 
-headlines, news_err, news_ts = load_news()
-headline_meter, headline_detail = risk_meter(headlines) if headlines else (0.0, "no headlines")
+def _history_mtime():
+    """mtime of data/history.json (None when the file is absent). Passed as
+    the `mtime` arg of load_history() so a new snapshot busts its cache."""
+    try:
+        return os.path.getmtime(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "data", "history.json"))
+    except OSError:
+        return None
 
-# Today-only composite inputs: SPY dealer positioning + Fed stance.
-# Failures degrade to neutral sleeves, never crash the score.
-try:
-    spy_gex = load_gex("SPY")
-except Exception:
-    spy_gex = None
-try:
-    fed = S.fed_stance(load_fedwatch()["meetings"])
-except Exception:
-    fed = None
 
-components = build_components(0, gex=spy_gex, fed=fed,
-                              news_meter=headline_meter if headlines else None)
-score_today, breakdown = S.composite(components)
-# Headline is the 3-day average — one volatile session can't swing it 10+ points.
-# Keep the full past-day component sets: the briefing card needs the sleeve
-# deltas, not just the headline scores.
-past_comps = [build_components(n) for n in (1, 2)]
-past = [S.composite(c)[0] for c in past_comps]
-score = float(np.mean([score_today, *past]))
+def _data_key(data_ts, idx, vm):
+    """Short fingerprint of the price inputs build_components() reads:
+    the load timestamp plus the S&P 500 / VIX latest closes. Passed as the
+    `data_key` arg of composite_history() so its cached trail recomputes
+    when the underlying prices change."""
+    spx = idx.get("S&P 500")
+    vix = vm.get("VIX")
+    spx_txt = (f"{spx.index[-1].date().isoformat()}|"
+               f"{float(spx['close'].iloc[-1]):.2f}"
+               if spx is not None and not spx.empty else "")
+    vix_txt = (f"{float(vix['close'].iloc[-1]):.2f}"
+               if vix is not None and not vix.empty else "")
+    return f"{data_ts.isoformat()}|{spx_txt}|{vix_txt}"
+
+
+def load_dashboard_state():
+    """Load every shared input once and return it as a bundle.
+
+    Called once at module level for the full page load, and again at the top
+    of every fragment that reads shared state — a fragment re-run only
+    re-executes the fragment, so without this the tabs would re-render the
+    first run's numbers forever. The individual loaders are @st.cache_data,
+    so a re-run is cheap (cache hits) until a TTL expires or a cache key
+    (history mtime, price fingerprint) changes; the pure score math is
+    recomputed from whatever the loaders return.
+
+    Also refreshes the module-level data globals build_components() reads,
+    so composite_history() recomputes from fresh prices when its data_key
+    busts the cache."""
+    global idx, vm, vx, sec, xa, br, rot_data, data_ts
+    global vx_fut, vx_fut_asof, vx_fut_err, sfred, cr5y
+    global headlines, news_err, news_ts, headline_meter, headline_detail
+    global spy_gex, fed
+    idx, vm, vx, sec, xa, br, rot_data, data_ts = load_data()
+    vx_fut, vx_fut_asof, vx_fut_err = load_vix_futures()
+    sfred = load_score_fred()
+    cr5y = load_credit_5y()
+    headlines, news_err, news_ts = load_news()
+    headline_meter, headline_detail = (risk_meter(headlines) if headlines
+                                       else (0.0, "no headlines"))
+    # Today-only composite inputs: SPY dealer positioning + Fed stance.
+    # Failures degrade to neutral sleeves, never crash the score.
+    try:
+        spy_gex = load_gex("SPY")
+    except Exception:
+        spy_gex = None
+    try:
+        fed = S.fed_stance(load_fedwatch()["meetings"])
+    except Exception:
+        fed = None
+    components = build_components(0, gex=spy_gex, fed=fed,
+                                  news_meter=headline_meter if headlines else None)
+    score_today, breakdown = S.composite(components)
+    # Headline is the 3-day average — one volatile session can't swing it
+    # 10+ points. Keep the full past-day component sets: the briefing card
+    # needs the sleeve deltas, not just the headline scores.
+    past_comps = [build_components(n) for n in (1, 2)]
+    past = [S.composite(c)[0] for c in past_comps]
+    score = float(np.mean([score_today, *past]))
+    fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
+    rot, rot_detail = S.risk_off_rotation(rot_data)
+    snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
+    failed = sorted({name for group in (idx, vm, vx, sec, xa, br)
+                     for name, df in group.items() if df.empty})
+    return {
+        "idx": idx, "vm": vm, "vx": vx, "sec": sec, "xa": xa, "br": br,
+        "rot_data": rot_data, "data_ts": data_ts,
+        "vx_fut": vx_fut, "vx_fut_asof": vx_fut_asof, "vx_fut_err": vx_fut_err,
+        "sfred": sfred, "cr5y": cr5y, "failed": failed,
+        "headlines": headlines, "news_err": news_err, "news_ts": news_ts,
+        "headline_meter": headline_meter, "headline_detail": headline_detail,
+        "spy_gex": spy_gex, "fed": fed,
+        "components": components, "score_today": score_today,
+        "breakdown": breakdown, "past_comps": past_comps, "score": score,
+        "fear": fear, "fear_detail": fear_detail,
+        "rot": rot, "rot_detail": rot_detail, "snaps": snaps,
+        "today": date.today(),
+        "history_mtime": _history_mtime(),
+        "data_key": _data_key(data_ts, idx, vm),
+        "asof": data_ts.astimezone(ZoneInfo("America/Toronto")).strftime(
+            "%b %d, %Y · %I:%M %p ET"),
+    }
+
+
+_STATE = load_dashboard_state()
+idx = _STATE["idx"]
+vm = _STATE["vm"]
+vx = _STATE["vx"]
+sec = _STATE["sec"]
+xa = _STATE["xa"]
+br = _STATE["br"]
+rot_data = _STATE["rot_data"]
+data_ts = _STATE["data_ts"]
+vx_fut = _STATE["vx_fut"]
+vx_fut_asof = _STATE["vx_fut_asof"]
+vx_fut_err = _STATE["vx_fut_err"]
+sfred = _STATE["sfred"]
+cr5y = _STATE["cr5y"]
+failed = _STATE["failed"]
+headlines = _STATE["headlines"]
+news_err = _STATE["news_err"]
+news_ts = _STATE["news_ts"]
+headline_meter = _STATE["headline_meter"]
+headline_detail = _STATE["headline_detail"]
+spy_gex = _STATE["spy_gex"]
+fed = _STATE["fed"]
+components = _STATE["components"]
+score_today = _STATE["score_today"]
+breakdown = _STATE["breakdown"]
+past_comps = _STATE["past_comps"]
+score = _STATE["score"]
+fear = _STATE["fear"]
+fear_detail = _STATE["fear_detail"]
+rot = _STATE["rot"]
+rot_detail = _STATE["rot_detail"]
+snaps = _STATE["snaps"]
+if failed:
+    st.warning(f"Data unavailable for: {', '.join(failed)} — "
+               "affected widgets show neutral values.")
+col_ts, col_btn = st.columns([5, 1])
+with col_ts:
+    st.caption(f"Data refreshed {data_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} · panels auto-refresh every 5 min · ↻ Refresh reloads now")
+with col_btn:
+    if st.button("↻ Refresh", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
 
 @st.cache_data(ttl=3600)
-def composite_history(days: int = 22):
+def composite_history(days: int = 22, data_key=None):
     """Trailing composite, oldest → newest. Past days use price-based
-    sleeves only (GEX/Fed/news are today-only inputs, neutral before)."""
+    sleeves only (GEX/Fed/news are today-only inputs, neutral before).
+
+    `data_key` is the fingerprint load_dashboard_state() computes from the
+    price inputs build_components() reads. A fragment re-run passes the
+    fresh key, so the cached trail recomputes when the underlying prices
+    change instead of serving the trail computed from the first run's data
+    until the TTL expires. (No leading underscore: Streamlit excludes
+    underscore-prefixed args from the cache key.)"""
     return [S.composite(build_components(n))[0] for n in range(days - 1, -1, -1)]
 
-fear, fear_detail = S.fear_context(vm["VIX"], idx["S&P 500"])
-rot, rot_detail = S.risk_off_rotation(rot_data)
-snaps = {n: technical_snapshot(df) for n, df in idx.items() if not df.empty}
+# (fear / rotation / technical snapshots are computed inside
+# load_dashboard_state() above and unpacked into _STATE.)
+
+
+# Timed auto-refresh: every data tab is an st.fragment that re-runs on this
+# interval without a full page reload or a manual ↻ Refresh.
+#   300 s (5 min) — deliberately shorter than the shortest live-feed TTL
+#   (load_data, 15 min) so fresh data shows within ~5 min of a cache
+#   expiring, but far slower than the 15-min Yahoo cadence: a fragment
+#   re-run is a cheap cache-hit re-render, not a new fetch. The daily
+#   snapshot file is not TTL-bound at all — load_history() is keyed on the
+#   file's mtime, so a new snapshot shows on the very next tick. The
+#   interval is one constant (not market-hours-aware): off-hours ticks are
+#   the same cheap re-render, and Streamlit Cloud bills nothing per tick.
+# Fragments cover all 10 tabs: every tab is data-driven (live prices,
+# FRED, headlines, calendar, earnings, GEX, Fed Watch). The sidebar,
+# header and manual ↻ Refresh button stay outside the fragments — the
+# button still clears every cache and does a full rerun, exactly as before.
+FRAGMENT_RUN_EVERY_S = 300
 
 tabs = st.tabs(["Overview", "Indices", "Volatility", "Macro",
                 "Sector Rotation", "News Risk", "Economic Calendar", "Earnings",
@@ -517,7 +651,27 @@ _DATA_ASOF = data_ts.astimezone(ZoneInfo("America/Toronto")).strftime(
     "%b %d, %Y · %I:%M %p ET")
 
 # ---------------- OVERVIEW ----------------
-with tabs[0]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_overview")
+def _tab_overview():
+    _s = load_dashboard_state()
+    idx = _s["idx"]
+    vm = _s["vm"]
+    xa = _s["xa"]
+    snaps = _s["snaps"]
+    score = _s["score"]
+    score_today = _s["score_today"]
+    components = _s["components"]
+    past_comps = _s["past_comps"]
+    breakdown = _s["breakdown"]
+    fear = _s["fear"]
+    fear_detail = _s["fear_detail"]
+    rot = _s["rot"]
+    rot_detail = _s["rot_detail"]
+    headline_meter = _s["headline_meter"]
+    _today = _s["today"]
+    _DATA_ASOF = _s["asof"]
+    history_mtime = _s["history_mtime"]
+    data_key = _s["data_key"]
     st.caption(f"Data as of {_DATA_ASOF} · composite & sleeves from live feeds; "
                "history panels read data/history.json.")
     # --- Today's briefing: 3-bullet synthesis ---
@@ -552,7 +706,7 @@ with tabs[0]:
         color = {"Risk-On": "green", "Neutral": "gray", "Risk-Off": "orange",
                  "Extreme Fear": "red"}[reg]
         st.markdown(f"### :{color}[{reg}]")
-        hist = composite_history()
+        hist = composite_history(data_key=data_key)
         hdates = idx["S&P 500"].index[-len(hist):]
         sfig = go.Figure(go.Scatter(x=hdates, y=hist, mode="lines",
                                     line=dict(color="#1f77b4", width=2),
@@ -593,7 +747,7 @@ with tabs[0]:
 
     # --- What changed vs the latest daily history record ---
     st.subheader("What changed")
-    _hist = load_history()
+    _hist = load_history(history_mtime)
     _prev = H.latest_record(_hist, before=_today.isoformat())
     if not _prev or not _prev.get("sleeves"):
         st.info("Daily history is still accumulating — the first snapshot "
@@ -789,8 +943,16 @@ with tabs[0]:
         col.metric(label, fmt.format(last),
                    f"{r1m:+.1f}% 1M" if r1m is not None else "")
 
+with tabs[0]:
+    _tab_overview()
+
 # ---------------- INDICES ----------------
-with tabs[1]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_indices")
+def _tab_indices():
+    _s = load_dashboard_state()
+    idx = _s["idx"]
+    snaps = _s["snaps"]
+    _DATA_ASOF = _s["asof"]
     st.caption(f"Data as of {_DATA_ASOF} · Yahoo Finance daily bars.")
     GL.show("Indices")
     for name, df in idx.items():
@@ -821,8 +983,22 @@ with tabs[1]:
                 {"Metric": "1-month return", "Value": fmt(s["ret_1m"], "%")},
             ]), use_container_width=True, hide_index=True)
 
+with tabs[1]:
+    _tab_indices()
+
 # ---------------- VOLATILITY ----------------
-with tabs[2]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_volatility")
+def _tab_volatility():
+    _s = load_dashboard_state()
+    idx = _s["idx"]
+    vm = _s["vm"]
+    vx = _s["vx"]
+    xa = _s["xa"]
+    cr5y = _s["cr5y"]
+    vx_fut = _s["vx_fut"]
+    vx_fut_asof = _s["vx_fut_asof"]
+    vx_fut_err = _s["vx_fut_err"]
+    _DATA_ASOF = _s["asof"]
     st.subheader("Volatility overview")
     st.caption(f"Data as of {_DATA_ASOF}"
                + (f" · VX futures curve as of {vx_fut_asof:%b %d, %Y} (CBOE)"
@@ -991,8 +1167,14 @@ with tabs[2]:
                 f"| 🔴 High fear | < {q20:.3f} |"
             )
 
+with tabs[2]:
+    _tab_volatility()
+
 # ---------------- MACRO (FRED API) ----------------
-with tabs[3]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_macro")
+def _tab_macro():
+    _s = load_dashboard_state()
+    vm = _s["vm"]
     st.subheader("US Macro — FRED")
     st.caption("Official macro series via the FRED API "
                "(Federal Reserve Bank of St. Louis).")
@@ -1200,8 +1382,15 @@ with tabs[3]:
                         use_container_width=True)
         st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
 
+with tabs[3]:
+    _tab_macro()
+
 # ---------------- SECTOR ROTATION ----------------
-with tabs[4]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_sector_rotation")
+def _tab_sector_rotation():
+    _s = load_dashboard_state()
+    sec = _s["sec"]
+    _DATA_ASOF = _s["asof"]
     st.caption(f"Data as of {_DATA_ASOF} · Yahoo Finance sector ETFs.")
     GL.show("Sector Rotation")
     perf = []
@@ -1236,6 +1425,9 @@ with tabs[4]:
     st.dataframe(pdf.style.format({"1M %": "{:+.2f}%", "3M %": "{:+.2f}%"}),
                  use_container_width=True, hide_index=True)
 
+with tabs[4]:
+    _tab_sector_rotation()
+
 # ---------------- NEWS RISK ----------------
 # Severity bands in 20-point increments; single source for gauge + legend.
 HEADLINE_RISK_BANDS = [
@@ -1246,7 +1438,15 @@ HEADLINE_RISK_BANDS = [
     ("80–100 · Severe", 80, 100, "#e74c3c"),
 ]
 
-with tabs[5]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_news_risk")
+def _tab_news_risk():
+    _s = load_dashboard_state()
+    headlines = _s["headlines"]
+    headline_meter = _s["headline_meter"]
+    headline_detail = _s["headline_detail"]
+    news_err = _s["news_err"]
+    news_ts = _s["news_ts"]
+    history_mtime = _s["history_mtime"]
     GL.show("News Risk")
     if news_err:
         st.warning(f"News feed unavailable: {news_err}")
@@ -1287,7 +1487,7 @@ with tabs[5]:
                 st.markdown(f"`{h['published']}` {badge} **[{h['source']}]** "
                             f"{h['title']} — {h['risk_reason']}")
         st.subheader("Headline risk — daily trend")
-        _ns = H.news_series(H.records(load_history()), 30)
+        _ns = H.news_series(H.records(load_history(history_mtime)), 30)
         if len(_ns) >= 2:
             _nfig = go.Figure(go.Scatter(
                 x=[r["date"] for r in _ns], y=[r["news_risk"] for r in _ns],
@@ -1343,8 +1543,14 @@ with tabs[5]:
     else:
         st.info("No headlines right now.")
 
+with tabs[5]:
+    _tab_news_risk()
+
 # ---------------- ECONOMIC CALENDAR ----------------
-with tabs[6]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_econ_calendar")
+def _tab_econ_calendar():
+    # No shared state: this tab re-calls its own cached loader(s)
+    # below, so there is nothing to reload here.
     st.caption(f"Data as of {datetime.now(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} "
                "(cached up to 1h) · Source: Nasdaq.")
     GL.show("Economic Calendar")
@@ -1409,8 +1615,15 @@ with tabs[6]:
     else:
         st.info("No events found.")
 
+with tabs[6]:
+    _tab_econ_calendar()
+
 # ---------------- EARNINGS ----------------
-with tabs[7]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_earnings")
+def _tab_earnings():
+    _s = load_dashboard_state()
+    _today = _s["today"]
+    history_mtime = _s["history_mtime"]
     st.caption(f"Data as of {datetime.now(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} "
                "(cached up to 1h) · Source: Nasdaq; implied moves: CBOE delayed chain.")
     GL.show("Earnings")
@@ -1513,7 +1726,7 @@ with tabs[7]:
         else:
             st.caption("No chain-name prints (NVDA, AMD, MU, AAPL, META, GOOG) "
                        "in the next 7 days.")
-        _ents = [e for e in H.earnings_entries(load_history())
+        _ents = [e for e in H.earnings_entries(load_history(history_mtime))
                  if e.get("date", "") <= today_str]
         if _ents:
             _srows = []
@@ -1537,8 +1750,14 @@ with tabs[7]:
     else:
         st.info("No notable earnings in the last day / next 7 days.")
 
+with tabs[7]:
+    _tab_earnings()
+
 # ---------------- GEX ----------------
-with tabs[8]:
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_gex")
+def _tab_gex():
+    # No shared state: this tab re-calls its own cached loader(s)
+    # below, so there is nothing to reload here.
     st.subheader("Gamma exposure (GEX)")
     GL.show("GEX")
     st.caption("Dealer gamma positioning from listed option chains — SPY/QQQ/IWM "
@@ -1631,7 +1850,13 @@ with tabs[8]:
                "Assumes dealers long calls / short puts: positive = long gamma "
                "(dampens), negative = short gamma (amplifies). [gex-v5]")
 
-with tabs[9]:
+with tabs[8]:
+    _tab_gex()
+
+@st.fragment(run_every=FRAGMENT_RUN_EVERY_S, key="tab_fed_watch")
+def _tab_fed_watch():
+    # No shared state: this tab re-calls its own cached loader(s)
+    # below, so there is nothing to reload here.
     st.subheader("Fed Watch — rate probabilities")
     GL.show("Fed Watch")
     st.caption("Market-implied odds of Fed moves at upcoming FOMC meetings, "
@@ -1695,8 +1920,11 @@ with tabs[9]:
                    "Data: Yahoo Finance (ZQ), FRED (DFF). Educational — not "
                    "investment advice.")
 
+with tabs[9]:
+    _tab_fed_watch()
+
 st.divider()
 st.caption("Data: Yahoo Finance (prices), FRED API (economy), Google News + CNBC RSS (headlines), ForexFactory "
            "(calendar), Nasdaq (earnings), CME ZQ futures + FRED (Fed Watch). "
            "Educational — not investment advice. "
-           "Data caches refresh on ↻ Refresh.")
+           "Data caches refresh on ↻ Refresh; data panels also auto-refresh every 5 min.")

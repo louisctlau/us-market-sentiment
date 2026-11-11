@@ -1,3 +1,30 @@
+## 2026-11-11 — Timed auto-refresh: data panels re-run every 5 minutes
+- All 10 tabs are now `st.fragment(run_every=300)` panels: they re-render
+  on a 5-minute timer with no full page reload and no manual ↻ Refresh.
+  The interval is deliberately shorter than the shortest live-feed TTL
+  (15 min for Yahoo prices) so fresh data shows within ~5 min of a cache
+  expiring; a fragment tick is a cheap cache-hit re-render, not a new
+  fetch. The sidebar, header and manual ↻ Refresh button are unchanged —
+  the button still clears every cache and does a full rerun.
+- Cache correctness (the point of the change — a timer that re-renders
+  stale numbers would be worse than none): every fragment that reads
+  shared state re-loads it via a new `load_dashboard_state()` helper
+  (the individual loaders are still `@st.cache_data`, so a tick is
+  cheap), and the two caches that used to serve pre-change reads now
+  bust on content change: `load_history()` is keyed on the
+  `data/history.json` mtime, so a snapshot written by the 17:30 cron
+  shows on the very next tick instead of waiting out its 1-hour TTL,
+  and `composite_history()` is keyed on a fingerprint of the price
+  inputs (load time + latest S&P 500 / VIX closes). Verified by test:
+  with the latest record's composite changed 35.33 → 42.4 in
+  `data/history.json`, a fragment-only rerun showed "vs 42.4" and the
+  old "vs 35.3" was gone; manual refresh kept the new value.
+- Tabs that call only their own cached loaders (Economic Calendar, GEX,
+  Fed Watch) reload through those loaders and skip the shared-state
+  helper. No new files; no Streamlit version change (`requirements.txt`
+  already pins `streamlit>=1.38`, installed 1.64.0 — fragments need
+  >= 1.37).
+
 ## 2026-10-30 — Put/call panel (SPY open interest)
 - New "Put/call — SPY open interest" section on the GEX tab: total put OI
   ÷ total call OI across the full SPY chain, from the daily options
