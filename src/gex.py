@@ -45,10 +45,19 @@ def _bs_gamma(S: float, K: np.ndarray, T: float, r: float,
 
 
 def _parse_cboe_symbol(sym: str) -> tuple[str, str, float]:
-    """'SPY260924C00550000' -> (expiry 'YYYY-MM-DD', side, strike)."""
-    expiry = f"20{sym[3:5]}-{sym[5:7]}-{sym[7:9]}"
-    side = "calls" if sym[9] == "C" else "puts"
-    strike = int(sym[10:]) / 1000.0
+    """'SPY260924C00550000' -> (expiry 'YYYY-MM-DD', side, strike).
+
+    Anchored on the TAIL of the symbol, not fixed positions: CBOE
+    returns alternate-root listings alongside the standard chain
+    ('B1SPY...' next to 'SPY...', same expiry/strike/type) and a
+    fixed-position parse dies on the prefix (2026-11-19: B1 rows
+    broke the whole GEX tab with int('0P00720000')). The tail
+    (YYMMDD + C/P + 8-digit strike) is identical in both forms.
+    """
+    core = sym.strip()
+    expiry = f"20{core[-15:-13]}-{core[-13:-11]}-{core[-11:-9]}"
+    side = "calls" if core[-9] == "C" else "puts"
+    strike = int(core[-8:]) / 1000.0
     return expiry, side, strike
 
 
@@ -77,13 +86,24 @@ def _from_cboe(etf: str, n_expiries: int) -> dict:
         gamma = float(o.get("gamma") or 0)
         if oi <= 0 or gamma <= 0:
             continue
-        expiry, side, strike = _parse_cboe_symbol(o["option"])
+        try:
+            expiry, side, strike = _parse_cboe_symbol(o["option"])
+        except Exception:
+            continue  # skip malformed symbols, don't kill the tab
         sign = 1.0 if side == "calls" else -1.0
         rows.append({"strike": strike, "expiry": expiry, "side": side,
-                     "gex_m": sign * gamma * oi * 100.0 * spot / 1e6})
+                     "gex_m": sign * gamma * oi * 100.0 * spot / 1e6,
+                     "oi": oi,
+                     "volume": float(o.get("volume") or 0)})
     if not rows:
         raise RuntimeError(f"CBOE returned no usable OI/gamma for {etf}")
     df = pd.DataFrame(rows)
+    # Alternate-root rows (B1SPY...) parse to the same
+    # (expiry, strike, side) as the standard rows but carry ~zero OI
+    # and stale-looking quotes — keep the most liquid per key.
+    df = (df.sort_values(["volume", "oi"], ascending=False)
+            .drop_duplicates(subset=["expiry", "strike", "side"])
+            .drop(columns=["volume", "oi"]))
     expiries = sorted(df["expiry"].unique())[:n_expiries]
     df = df[df["expiry"].isin(expiries)]
     return {"spot": spot, "expiries": expiries, "contracts": df}

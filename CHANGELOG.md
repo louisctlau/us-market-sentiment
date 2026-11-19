@@ -1,3 +1,18 @@
+## 2026-11-19 — GEX tab fix: CBOE alternate-root symbols (B1SPY)
+- The SPY GEX panel broke when CBOE started returning alternate-root
+  listings (`B1SPY...` next to `SPY...`, same expiry/strike/type) in the
+  delayed-quotes feed: the symbol parser read fields at fixed positions
+  and died with `int('0P00720000')`, taking down the live SPY/QQQ/IWM
+  panels (and the 17:30 snapshot's GEX read, which shares the code).
+- `src/gex.py` now parses symbols anchored on the tail (YYMMDD + C/P +
+  8-digit strike), skips malformed symbols instead of raising, and
+  dedupes alternate-root rows by keeping the most liquid contract per
+  (expiry, strike, side) — the same handling Portfolio Lab's
+  `option_chains.py` already uses. The B1 rows carry ~zero OI and
+  stale-looking quotes; excluding them moves net GEX by ~$0.00M.
+- Verified locally: SPY net −$1,189M/pt (spot 729.99, expiries
+  2026-11-19/20/23), QQQ −$85M, IWM −$1,487M.
+
 ## 2026-11-11 — Timed auto-refresh: data panels re-run every 5 minutes
 - All 10 tabs are now `st.fragment(run_every=300)` panels: they re-render
   on a 5-minute timer with no full page reload and no manual ↻ Refresh.
