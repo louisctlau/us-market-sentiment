@@ -1764,8 +1764,8 @@ def _tab_gex():
                "as S&P 500 / Nasdaq 100 / Russell 2000 proxies. Positive GEX = "
                "dealers long gamma (dampens moves); negative = short gamma "
                "(amplifies moves). Nearest 3 expiries, prior-day open interest. [gex-v5]")
-    st.caption("Chain data: CBOE delayed quotes (~15 min), cached up to 1h — "
-               "↻ Refresh reloads.")
+    st.caption("Chain data: Yahoo Finance option chains (~15 min delayed), "
+               "cached up to 1h — ↻ Refresh reloads.")
 
     st.subheader("GEX history — SPY")
     _gh = load_gex_history()

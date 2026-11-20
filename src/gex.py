@@ -1,8 +1,14 @@
 """Gamma exposure (GEX) for index-proxy ETFs.
 
-Primary source: CBOE delayed-quotes API (public, no key), which publishes
-per-contract gamma and open interest. Fallback: yfinance option chains with
+Primary source: Yahoo Finance option chains, with per-contract
 Black-Scholes gamma estimated from each contract's implied vol.
+Fallback: the CBOE delayed-quotes API (public, no key), which publishes
+per-contract gamma and open interest.
+
+2026-11-20: the order flipped — CBOE moved its delayed-quotes API to
+cdn-api.cboe.com behind Cloudflare bot protection, and every
+server-side fetch (urllib, curl, even a real browser) now gets a 403
+"Attention Required" page, so CBOE is fallback-only until it unblocks.
 
 Dealer positioning assumption (standard): dealers are long calls / short
 puts, so
@@ -13,9 +19,9 @@ in dollars of delta-hedge flow per 1-point move (displayed in $M).
 Positive GEX = dealers long gamma (dampens moves, pinning);
 negative GEX = dealers short gamma (amplifies moves). [gex-v5]
 
-yfinance fallback approximations (documented, not hidden): risk-free rate
-fixed at 4%, no dividend yield, time to expiry clamped at >= 6 hours.
-Open interest is prior-day on both sources.
+Yahoo approximations (documented, not hidden): risk-free rate fixed at
+4%, no dividend yield, time to expiry clamped at >= 6 hours. Open
+interest is prior-day on both sources.
 """
 from __future__ import annotations
 
@@ -109,51 +115,112 @@ def _from_cboe(etf: str, n_expiries: int) -> dict:
     return {"spot": spot, "expiries": expiries, "contracts": df}
 
 
-def _from_yfinance(etf: str, n_expiries: int) -> dict:
+def _occ_symbol(root: str, expiry: str, side: str, strike: float) -> str:
+    """Synthesize an OCC symbol ('SPY261120C00715000') for a Yahoo row so
+    the CBOE parsers (tail-anchored) work unchanged."""
+    yymmdd = expiry[2:4] + expiry[5:7] + expiry[8:10]
+    return (f"{root}{yymmdd}{'C' if side == 'calls' else 'P'}"
+            f"{int(round(strike * 1000)):08d}")
+
+
+def _num(v) -> float | None:
+    """A Yahoo quote field as a float, or None when missing/NaN."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f else None  # NaN -> None
+
+
+def _yahoo_chain(ticker: str, max_expiries: int) -> dict:
+    """Option chain from Yahoo Finance, shaped like the CBOE payload.
+
+    Returns {"spot": float, "options": [ {option, bid, ask, volume,
+    open_interest, iv, gamma, last_trade_price}, ... ]} with model
+    Black-Scholes gamma per contract (r = 4%, q = 0). Shared by the GEX
+    path below and the earnings-IV straddle (src/earnings_iv.py), so
+    there is exactly one Yahoo code path.
+    """
     import yfinance as yf
-    t = yf.Ticker(etf)
-    expiries = list(t.options or [])[:n_expiries]
+    t = yf.Ticker(ticker)
+    expiries = list(t.options or [])[:max_expiries]
     if not expiries:
-        raise RuntimeError(f"no expiries for {etf}")
+        raise RuntimeError(f"Yahoo returned no expiries for {ticker}")
     hist = t.history(period="5d")
     if hist.empty:
-        raise RuntimeError(f"no price history for {etf}")
+        raise RuntimeError(f"Yahoo returned no price history for {ticker}")
     spot = float(hist["Close"].iloc[-1])
     today = datetime.now(ZoneInfo("America/Toronto")).date()  # ET, not server-local
-    rows = []
+    options = []
     for exp in expiries:
         T = max((date.fromisoformat(exp) - today).days / 365.0, MIN_T_YEARS)
         try:
             chain = t.option_chain(exp)
         except Exception:
             continue
-        for side, sign in (("calls", 1.0), ("puts", -1.0)):
-            df = getattr(chain, side)
-            if df.empty:
+        for side, frame in (("calls", chain.calls), ("puts", chain.puts)):
+            if frame.empty:
                 continue
-            df = df[(df["openInterest"].fillna(0) > 0) &
-                    (df["impliedVolatility"].fillna(0) > 0) &
-                    (df["impliedVolatility"] < 5)].copy()
+            df = frame[(frame["impliedVolatility"].fillna(0) > 0) &
+                       (frame["impliedVolatility"] < 5)].copy()
             if df.empty:
                 continue
             K = df["strike"].to_numpy(float)
             iv = df["impliedVolatility"].to_numpy(float)
-            oi = df["openInterest"].to_numpy(float)
             gamma = _bs_gamma(spot, K, T, RISK_FREE, iv)
-            df["gex_m"] = sign * gamma * oi * 100.0 * spot / 1e6
-            df["side"] = side
-            rows.append(df[["strike", "gex_m", "side"]])
+            for i, (_, row) in enumerate(df.iterrows()):
+                options.append({
+                    "option": _occ_symbol(ticker, exp, side,
+                                          float(row["strike"])),
+                    "bid": _num(row.get("bid")),
+                    "ask": _num(row.get("ask")),
+                    "volume": _num(row.get("volume")),
+                    "open_interest": _num(row.get("openInterest")),
+                    "iv": float(iv[i]),
+                    "gamma": float(gamma[i]),
+                    "last_trade_price": _num(row.get("lastPrice")),
+                })
+    if not options:
+        raise RuntimeError(f"Yahoo returned no usable contracts for {ticker}")
+    return {"spot": spot, "options": options}
+
+
+def _from_yfinance(etf: str, n_expiries: int) -> dict:
+    data = _yahoo_chain(etf, n_expiries)
+    spot = data["spot"]
+    rows = []
+    for o in data["options"]:
+        oi = float(o.get("open_interest") or 0)
+        gamma = float(o.get("gamma") or 0)
+        if oi <= 0 or gamma <= 0:
+            continue
+        try:
+            expiry, side, strike = _parse_cboe_symbol(o["option"])
+        except Exception:
+            continue  # skip malformed symbols, don't kill the tab
+        sign = 1.0 if side == "calls" else -1.0
+        rows.append({"strike": strike, "expiry": expiry, "side": side,
+                     "gex_m": sign * gamma * oi * 100.0 * spot / 1e6,
+                     "oi": oi,
+                     "volume": float(o.get("volume") or 0)})
     if not rows:
-        raise RuntimeError(f"no usable option data for {etf}")
-    contracts = pd.concat(rows)
-    contracts["expiry"] = ""
-    return {"spot": spot, "expiries": expiries, "contracts": contracts}
+        raise RuntimeError(f"Yahoo returned no usable OI/gamma for {etf}")
+    df = pd.DataFrame(rows)
+    # Alternate-root rows (B1SPY...) parse to the same
+    # (expiry, strike, side) as the standard rows but carry ~zero OI
+    # and stale-looking quotes — keep the most liquid per key.
+    df = (df.sort_values(["volume", "oi"], ascending=False)
+            .drop_duplicates(subset=["expiry", "strike", "side"])
+            .drop(columns=["volume", "oi"]))
+    expiries = sorted(df["expiry"].unique())[:n_expiries]
+    df = df[df["expiry"].isin(expiries)]
+    return {"spot": spot, "expiries": expiries, "contracts": df}
 
 
 def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
-    """Aggregate GEX by strike. Tries CBOE first, then yfinance."""
+    """Aggregate GEX by strike. Tries Yahoo first, then CBOE."""
     errors = []
-    for fn in (_from_cboe, _from_yfinance):
+    for fn in (_from_yfinance, _from_cboe):
         try:
             src = fn(etf, n_expiries)
             break

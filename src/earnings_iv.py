@@ -1,9 +1,11 @@
-"""Options-implied earnings move from the live CBOE delayed chain.
+"""Options-implied earnings move from the live option chain.
 
 Implied move = ATM straddle price / spot for the first expiry bracketing
 the earnings print (after-hours print -> first expiry AFTER the date;
-pre-market print -> first expiry ON/AFTER the date). Same CBOE delayed-
-quotes endpoint the GEX tab uses (src/gex.py) — no GEX math is touched.
+pre-market print -> first expiry ON/AFTER the date). Yahoo Finance
+option chains first, CBOE delayed quotes as fallback (CBOE is
+Cloudflare-blocked from servers since 2026-11-20) — no GEX math is
+touched.
 
 Honesty rule: this is only ever computed BEFORE a print (live in the app
 for upcoming prints; by scripts/daily_snapshot.py for the scorecard
@@ -15,7 +17,7 @@ import json
 from datetime import date, timedelta
 from urllib.request import Request, urlopen
 
-from .gex import CBOE_URL, UA
+from .gex import CBOE_URL, UA, _yahoo_chain
 
 
 def _parse_symbol(sym: str) -> tuple[str, str, float]:
@@ -36,6 +38,10 @@ def _mid(o: dict) -> float | None:
 
 
 def fetch_chain(ticker: str) -> dict:
+    try:
+        return _yahoo_chain(ticker, max_expiries=12)
+    except Exception:
+        pass  # fall through to CBOE
     req = Request(CBOE_URL.format(ticker), headers=UA)
     with urlopen(req, timeout=25) as resp:
         payload = json.loads(resp.read().decode())
