@@ -2,6 +2,7 @@
 - CBOE moved its delayed-quotes API to cdn-api.cboe.com behind Cloudflare bot protection: every server-side fetch now gets a 403, so the SPY/QQQ/IWM GEX profiles (and the Earnings tab's implied-move straddle, which shared the feed) stopped loading.
 - `src/gex.py` now tries Yahoo Finance option chains first (model Black-Scholes gamma from each contract's IV, r = 4%, q = 0) with CBOE as fallback; `src/earnings_iv.py` shares the same Yahoo chain fetcher. GEX values, walls and γflip are computed exactly as before ([gex-v5]).
 - The daily archive fetcher switched to the same Yahoo-first order, so the GEX history and put/call panels keep accruing.
+- The Yahoo chain fetcher now retries 3x with backoff: Yahoo intermittently rate-limits Streamlit Cloud's shared IPs (`t.options` comes back empty), which left the live GEX profiles showing "GEX unavailable" around midday Nov 20 while the history charts (archive data) were unaffected. Portfolio Lab's Options Analytics, on the same feed, loaded fine two minutes later — the block is per-request flaky, not sustained.
 
 ## 2026-11-19 — GEX tab fix: CBOE alternate-root symbols (B1SPY)
 - The SPY GEX panel broke when CBOE started returning alternate-root

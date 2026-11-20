@@ -140,7 +140,23 @@ def _yahoo_chain(ticker: str, max_expiries: int) -> dict:
     Black-Scholes gamma per contract (r = 4%, q = 0). Shared by the GEX
     path below and the earnings-IV straddle (src/earnings_iv.py), so
     there is exactly one Yahoo code path.
+
+    Retries 3x with backoff: Yahoo rate-limits Streamlit Cloud's shared
+    egress IPs intermittently (t.options comes back empty), and a retry
+    a few seconds later usually succeeds.
     """
+    import time
+    last = None
+    for attempt in range(3):
+        try:
+            return _yahoo_chain_once(ticker, max_expiries)
+        except Exception as e:  # noqa: BLE001 - retry, then report
+            last = e
+            time.sleep(5 * (attempt + 1))
+    raise RuntimeError(f"Yahoo failed for {ticker} after 3 tries: {last}")
+
+
+def _yahoo_chain_once(ticker: str, max_expiries: int) -> dict:
     import yfinance as yf
     t = yf.Ticker(ticker)
     expiries = list(t.options or [])[:max_expiries]
