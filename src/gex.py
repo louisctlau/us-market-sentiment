@@ -25,6 +25,7 @@ interest is prior-day on both sources.
 """
 from __future__ import annotations
 
+import time
 from datetime import date, datetime
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
@@ -32,6 +33,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import requests
 
 CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{}.json"
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -132,6 +134,16 @@ def _num(v) -> float | None:
     return f if f == f else None  # NaN -> None
 
 
+class _TimeoutSession(requests.Session):
+    """requests session with a per-request timeout. yfinance passes no
+    timeout of its own, so a tarpitted Yahoo request can hang a tab
+    indefinitely; every Yahoo call through this session is capped."""
+
+    def request(self, *args, **kwargs):
+        kwargs.setdefault("timeout", 15)
+        return super().request(*args, **kwargs)
+
+
 def _yahoo_chain(ticker: str, max_expiries: int) -> dict:
     """Option chain from Yahoo Finance, shaped like the CBOE payload.
 
@@ -141,39 +153,58 @@ def _yahoo_chain(ticker: str, max_expiries: int) -> dict:
     path below and the earnings-IV straddle (src/earnings_iv.py), so
     there is exactly one Yahoo code path.
 
-    Retries 3x with backoff: Yahoo rate-limits Streamlit Cloud's shared
-    egress IPs intermittently (t.options comes back empty), and a retry
-    a few seconds later usually succeeds.
+    Bounded (2026-11-20, midday): Yahoo intermittently rate-limits
+    Streamlit Cloud's shared IPs and, worse, sometimes tarpits instead
+    of failing fast — the first retry design (3 attempts, 5s/10s sleeps,
+    no timeout) hung the whole GEX tab for 6+ minutes. Each attempt now
+    has a 45s deadline and every request a 15s timeout, and the second
+    attempt runs only when the first failed fast (a rate-limit returns
+    empty expiries immediately). A slow failure is never retried, so a
+    bad Yahoo day costs at most ~1 min per ticker, then the tab shows a
+    warning / archive fallback instead of hanging.
     """
-    import time
     last = None
-    for attempt in range(3):
+    for attempt in range(2):
+        t0 = time.monotonic()
         try:
-            return _yahoo_chain_once(ticker, max_expiries)
-        except Exception as e:  # noqa: BLE001 - retry, then report
+            return _yahoo_chain_once(ticker, max_expiries,
+                                     time.monotonic() + 45)
+        except Exception as e:  # noqa: BLE001 - retry once if fast, else report
             last = e
-            time.sleep(5 * (attempt + 1))
-    raise RuntimeError(f"Yahoo failed for {ticker} after 3 tries: {last}")
+            if attempt == 0 and time.monotonic() - t0 < 10:
+                time.sleep(3)
+                continue
+            break
+    raise RuntimeError(f"Yahoo failed for {ticker}: {last}")
 
 
-def _yahoo_chain_once(ticker: str, max_expiries: int) -> dict:
+def _yahoo_chain_once(ticker: str, max_expiries: int, deadline: float) -> dict:
     import yfinance as yf
-    t = yf.Ticker(ticker)
+    t = yf.Ticker(ticker, session=_TimeoutSession())
     expiries = list(t.options or [])[:max_expiries]
     if not expiries:
         raise RuntimeError(f"Yahoo returned no expiries for {ticker}")
+    if time.monotonic() > deadline:
+        raise RuntimeError(f"Yahoo timed out for {ticker}")
     hist = t.history(period="5d")
     if hist.empty:
         raise RuntimeError(f"Yahoo returned no price history for {ticker}")
     spot = float(hist["Close"].iloc[-1])
     today = datetime.now(ZoneInfo("America/Toronto")).date()  # ET, not server-local
     options = []
+    fails = 0
     for exp in expiries:
+        if time.monotonic() > deadline:
+            break
         T = max((date.fromisoformat(exp) - today).days / 365.0, MIN_T_YEARS)
         try:
             chain = t.option_chain(exp)
         except Exception:
+            fails += 1
+            if fails >= 3:
+                break
             continue
+        fails = 0
         for side, frame in (("calls", chain.calls), ("puts", chain.puts)):
             if frame.empty:
                 continue

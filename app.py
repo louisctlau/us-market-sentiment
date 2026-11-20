@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import os
 from datetime import date, datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor
 from zoneinfo import ZoneInfo
 from plotly.subplots import make_subplots
 
@@ -1817,13 +1818,46 @@ def _tab_gex():
     else:
         st.info("Put/call history is being collected — it appears once the "
                 "daily archive rebuild carries the ratio.")
+    # Load the three live profiles concurrently: one slow Yahoo fetch must
+    # not hold the other two hostage (load_gex is cached, so this is
+    # thread-safe). Each load is bounded to ~1 min in src/gex.py, so the
+    # tab can never hang the way it did on 2026-11-20 midday.
+    def _try_gex(etf):
+        try:
+            return etf, load_gex(etf), None
+        except Exception as e:  # noqa: BLE001 - surfaced per-ETF below
+            return etf, None, e
+
+    with ThreadPoolExecutor(max_workers=3) as _ex:
+        _gex = {etf: (g, err) for etf, g, err
+                in _ex.map(_try_gex, ["SPY", "QQQ", "IWM"])}
     for name, etf in [("S&P 500", "SPY"), ("Nasdaq 100", "QQQ"),
                       ("Russell 2000", "IWM")]:
-        try:
-            g = load_gex(etf)
-        except Exception as e:
+        g, err = _gex[etf]
+        if g is None:
             st.markdown(f"#### {name} ({etf})")
-            st.warning(f"GEX unavailable for {etf}: {e}")
+            if etf == "SPY" and _gh is not None and not _gh.empty:
+                # The daily archive carries SPY's headline numbers, so a
+                # dead live chain still leaves something true on screen.
+                _last = _gh.iloc[-1]
+                st.info(f"Live chain unavailable ({err}) — showing the "
+                        f"latest daily archive snapshot instead.")
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Net GEX",
+                          f"${float(_last['net_gex_m']):+.0f}M/pt")
+                m2.metric("Put wall (support)",
+                          f"{float(_last['put_wall']):.0f}"
+                          if pd.notna(_last["put_wall"]) else "—")
+                m3.metric("Call wall (resistance)",
+                          f"{float(_last['call_wall']):.0f}"
+                          if pd.notna(_last["call_wall"]) else "—")
+                m4.metric("γflip",
+                          f"{float(_last['gamma_flip']):.0f}"
+                          if pd.notna(_last["gamma_flip"]) else "—")
+                st.caption(f"As of {_last['date'].date()} close (daily "
+                           f"archive) — live chain retries every 5 min.")
+            else:
+                st.warning(f"GEX unavailable for {etf}: {err}")
             continue
         st.markdown(f"#### {name} ({etf})")
         m1, m2, m3, m4 = st.columns(4)
