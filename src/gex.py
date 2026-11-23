@@ -264,19 +264,13 @@ def _from_yfinance(etf: str, n_expiries: int) -> dict:
     return {"spot": spot, "expiries": expiries, "contracts": df}
 
 
-def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
-    """Aggregate GEX by strike. Tries Yahoo first, then CBOE."""
-    errors = []
-    for fn in (_from_yfinance, _from_cboe):
-        try:
-            src = fn(etf, n_expiries)
-            break
-        except Exception as e:
-            errors.append(f"{fn.__name__}: {e}")
-    else:
-        raise RuntimeError("[gex-v5] " + "; ".join(errors))
-
-    contracts = src["contracts"]
+def _aggregate(contracts: pd.DataFrame, spot: float,
+               n_expiries: int = 3) -> dict:
+    """Aggregate a contracts frame (strike/expiry/side/gex_m) into the
+    gex_by_strike result shape. Shared by the live fetchers and the
+    archive fallback, so the numbers are computed identically."""
+    expiries = sorted(contracts["expiry"].unique())[:n_expiries]
+    contracts = contracts[contracts["expiry"].isin(expiries)]
     piv = contracts.pivot_table(index="strike", columns="side", values="gex_m",
                                 aggfunc="sum").fillna(0.0)
     for c in ("calls", "puts"):
@@ -285,7 +279,6 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
     piv["net_gex"] = piv["calls"] + piv["puts"]  # puts already negative
     piv = piv.sort_index()
 
-    spot = src["spot"]
     total_net = float(piv["net_gex"].sum())
     above = piv[piv.index >= spot]
     below = piv[piv.index <= spot]
@@ -299,10 +292,91 @@ def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
     hits = flip[flip].index
     zero_gamma = float(hits[0]) if len(hits) else None
 
-    return {"etf": etf, "spot": spot, "expiries": src["expiries"],
+    return {"spot": spot, "expiries": expiries,
             "strikes": piv.reset_index(), "total_net": total_net,
             "call_wall": call_wall, "put_wall": put_wall,
             "zero_gamma": zero_gamma}
+
+
+ARCHIVED_CHAIN_URL = ("https://raw.githubusercontent.com/louisctlau/"
+                      "asset-mix-dashboard/main/data/latest_gex_chains.csv")
+
+
+def gex_from_archive(etf: str, n_expiries: int = 3) -> dict:
+    """Per-strike GEX from the latest daily archive snapshot (the
+    asset-mix repo's data/latest_gex_chains.csv, built by the 17:00
+    archive job from the previous close's full chains).
+
+    Used when both live sources fail — Yahoo 429s Streamlit Cloud's
+    shared IPs most days now, and CBOE is Cloudflare-blocked — so the
+    GEX charts still render, labelled with their snapshot date.
+    The archive's gamma is model Black-Scholes (r = 5%, same as the
+    archive's other greeks); the live path uses r = 4% — the difference
+    in gamma is negligible. Returns the gex_by_strike shape plus
+    "as_of" (the snapshot date).
+    """
+    import os
+    df = None
+    for src in (ARCHIVED_CHAIN_URL,
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "..", "data", "latest_gex_chains.csv")):
+        try:
+            df = pd.read_csv(src, parse_dates=["snapshot_date", "expiry"])
+            break
+        except Exception:
+            df = None
+    if df is None or df.empty:
+        raise RuntimeError(f"archived chain file unavailable for {etf}")
+    sub = df[df["ticker"].astype(str).str.upper() == etf.upper()].copy()
+    if sub.empty:
+        raise RuntimeError(f"{etf} is not in the archived chain file")
+    as_of = pd.to_datetime(sub["snapshot_date"].iloc[0]).date()
+    spot = float(sub["underlying_price"].median())
+    rows = []
+    for _, row in sub.iterrows():
+        oi = float(row.get("open_interest") or 0)
+        gamma = float(row.get("gamma") or 0)
+        if oi <= 0 or gamma <= 0:
+            continue
+        side = "calls" if row["option_type"] == "call" else "puts"
+        sign = 1.0 if side == "calls" else -1.0
+        rows.append({"strike": float(row["strike"]),
+                     "expiry": pd.to_datetime(row["expiry"])
+                     .strftime("%Y-%m-%d"),
+                     "side": side,
+                     "gex_m": sign * gamma * oi * 100.0 * spot / 1e6,
+                     "oi": oi,
+                     "volume": float(row.get("volume") or 0)})
+    if not rows:
+        raise RuntimeError(f"archived chain has no usable OI/gamma for {etf}")
+    contracts = pd.DataFrame(rows)
+    # Alternate-root rows parse to the same (expiry, strike, side) —
+    # keep the most liquid per key, same as the live path.
+    contracts = (contracts.sort_values(["volume", "oi"], ascending=False)
+                 .drop_duplicates(subset=["expiry", "strike", "side"])
+                 .drop(columns=["volume", "oi"]))
+    out = _aggregate(contracts, spot, n_expiries)
+    out["etf"] = etf
+    out["as_of"] = as_of
+    return out
+
+
+def gex_by_strike(etf: str, n_expiries: int = 3) -> dict:
+    """Aggregate GEX by strike. Tries Yahoo first, then CBOE."""
+    errors = []
+    for fn in (_from_yfinance, _from_cboe):
+        try:
+            src = fn(etf, n_expiries)
+            break
+        except Exception as e:
+            errors.append(f"{fn.__name__}: {e}")
+    else:
+        raise RuntimeError("[gex-v5] " + "; ".join(errors))
+
+    contracts = src["contracts"]
+    out = _aggregate(contracts, src["spot"], n_expiries)
+    out["etf"] = etf
+    return out
 
 
 def gex_chart(g: dict, title: str) -> go.Figure:

@@ -1,3 +1,7 @@
+## 2026-11-23 — GEX charts render from the daily archive when live chains fail
+- Yahoo rate-limits Streamlit Cloud's shared IPs (HTTP 429) and CBOE is Cloudflare-blocked, so the live SPY/QQQ/IWM profiles stopped loading: SPY fell back to archive metrics only (no chart) and QQQ/IWM showed "GEX unavailable".
+- `src/gex.py` gained `gex_from_archive()` — per-strike GEX from the asset-mix repo's `data/latest_gex_chains.csv` (same [gex-v5] aggregation, verified bit-identical against the Nov 20 history row: net −$3,461M/pt, γflip 480) — and the GEX tab now renders the full bar chart + metrics from the latest snapshot when the live chain fails, labelled with its snapshot date. The archive now covers QQQ and IWM too, so all three profiles have fallback coverage. Verified locally (AppTest, live fetch forced to fail): SPY +$201M/pt, QQQ +$102M/pt, IWM −$61M/pt, all as of Nov 23.
+
 ## 2026-11-20 — GEX profiles switched to Yahoo Finance (CBOE blocked)
 - CBOE moved its delayed-quotes API to cdn-api.cboe.com behind Cloudflare bot protection: every server-side fetch now gets a 403, so the SPY/QQQ/IWM GEX profiles (and the Earnings tab's implied-move straddle, which shared the feed) stopped loading.
 - `src/gex.py` now tries Yahoo Finance option chains first (model Black-Scholes gamma from each contract's IV, r = 4%, q = 0) with CBOE as fallback; `src/earnings_iv.py` shares the same Yahoo chain fetcher. GEX values, walls and γflip are computed exactly as before ([gex-v5]).

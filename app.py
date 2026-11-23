@@ -211,6 +211,14 @@ def load_gex(etf: str):
 
 
 @st.cache_data(ttl=3600)
+def load_gex_archive(etf: str):
+    # Archive fallback when both live sources fail (Yahoo 429 / CBOE
+    # 403): the daily archive's latest chain snapshot, same shape as
+    # gex_by_strike plus "as_of". Failures raise, never cached.
+    return G.gex_from_archive(etf)
+
+
+@st.cache_data(ttl=3600)
 def load_gex_history():
     """Trailing GEX snapshots. The daily options-chain archive job rebuilds
     data/options_history.csv in the asset-mix-dashboard repo and pushes it;
@@ -1821,12 +1829,18 @@ def _tab_gex():
     # Load the three live profiles concurrently: one slow Yahoo fetch must
     # not hold the other two hostage (load_gex is cached, so this is
     # thread-safe). Each load is bounded to ~1 min in src/gex.py, so the
-    # tab can never hang the way it did on 2026-11-20 midday.
+    # tab can never hang the way it did on 2026-11-20 midday. When the
+    # live chain fails (Yahoo 429 / CBOE 403), fall back to the latest
+    # daily archive snapshot so the chart still renders, labelled with
+    # its snapshot date — only a missing archive leaves "unavailable".
     def _try_gex(etf):
         try:
             return etf, load_gex(etf), None
-        except Exception as e:  # noqa: BLE001 - surfaced per-ETF below
-            return etf, None, e
+        except Exception as e:  # noqa: BLE001 - archive fallback below
+            try:
+                return etf, load_gex_archive(etf), None
+            except Exception as e2:  # noqa: BLE001 - surfaced per-ETF below
+                return etf, None, f"{e} (archive: {e2})"
 
     with ThreadPoolExecutor(max_workers=3) as _ex:
         _gex = {etf: (g, err) for etf, g, err
@@ -1868,6 +1882,9 @@ def _tab_gex():
                   f"{g['call_wall']:.0f}" if g["call_wall"] else "—")
         m4.metric("γflip",
                   f"{g['zero_gamma']:.0f}" if g["zero_gamma"] else "—")
+        if g.get("as_of"):
+            st.info(f"Live chain unavailable — showing the latest daily "
+                    f"archive snapshot (as of {g['as_of']} close).")
         st.plotly_chart(G.gex_chart(g, f"{name} — net GEX by strike "
                                       f"({', '.join(g['expiries'])})"),
                         use_container_width=True)
