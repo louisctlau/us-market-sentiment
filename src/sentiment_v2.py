@@ -254,7 +254,12 @@ def positioning_score(gex: dict | None) -> tuple[float, str]:
         notes.append(f"net GEX ${t:+.0f}M/pt")
     if not sleeves:
         return 50.0, "GEX data incomplete"
-    return _blend(sleeves), "; ".join(notes)
+    detail = "; ".join(notes)
+    if gex.get("as_of"):
+        # Archive fallback (live chain down): label the snapshot date so
+        # the detail never passes yesterday's gamma off as today's.
+        detail += f" (archive {gex['as_of']})"
+    return _blend(sleeves), detail
 
 
 def news_score(headline_meter: float | None) -> tuple[float, str]:

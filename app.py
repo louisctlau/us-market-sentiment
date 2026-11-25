@@ -537,7 +537,13 @@ def load_dashboard_state():
     try:
         spy_gex = load_gex("SPY")
     except Exception:
-        spy_gex = None
+        # Live chains fail most days now (Yahoo 429 / CBOE 403) — fall
+        # back to the latest daily archive snapshot, same as the GEX tab,
+        # so Positioning scores real dealer gamma instead of neutral 50.
+        try:
+            spy_gex = load_gex_archive("SPY")
+        except Exception:
+            spy_gex = None
     try:
         fed = S.fed_stance(load_fedwatch()["meetings"])
     except Exception:

@@ -195,7 +195,13 @@ def main() -> int:
     try:
         spy_gex = G.gex_by_strike("SPY")
     except Exception:
-        spy_gex = None
+        # Live chains fail most days now (Yahoo 429 / CBOE 403) — same
+        # archive fallback as the dashboard, so the record carries real
+        # dealer gamma instead of nulls.
+        try:
+            spy_gex = G.gex_from_archive("SPY")
+        except Exception:
+            spy_gex = None
     try:
         fed = S.fed_stance(F.fedwatch()["meetings"])
     except Exception:
