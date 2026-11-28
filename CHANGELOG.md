@@ -1,3 +1,7 @@
+## 2026-11-27 — `use_container_width` migrated to `width="stretch"` (deprecated in Streamlit 1.64)
+- All 45 `use_container_width=True` call sites in `app.py` (Plotly charts, dataframes, the Refresh button) now use `width="stretch"` — the documented replacement. Behaviour is unchanged: charts and tables were already full-width, and the button keeps stretching (buttons default to `width="content"`, so the explicit value matters there).
+- `requirements.txt` floor raised to `streamlit>=1.47`, the version that introduced the `width` parameter. Verified locally with AppTest: no exceptions, app renders.
+
 ## 2026-11-25 — Positioning sleeve now uses the archive GEX fallback
 - The "What drives the score" table's Positioning row always read "GEX unavailable" and scored a neutral 50: the composite loaded SPY GEX from the live chain only (`load_gex`), and Yahoo 429s Streamlit Cloud's shared IPs most days while CBOE is Cloudflare-blocked, so the loader raised and the sleeve degraded. The GEX tab already had the archive fallback; the composite didn't.
 - `load_dashboard_state()` now falls back to `load_gex_archive("SPY")` when the live chain fails, and `positioning_score()` labels archive data in the detail (e.g. "+24.2% vs γflip; net GEX $-186M/pt (archive 2026-11-24)"). `scripts/daily_snapshot.py` got the same fallback, so the 17:30 snapshot's GEX fields and Positioning sleeve carry real dealer gamma instead of nulls/50. Verified locally: live fails (Yahoo 429 + CBOE 403), archive loads (as of Nov 24), Positioning scores 74.0.

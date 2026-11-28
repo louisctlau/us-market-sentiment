@@ -621,7 +621,7 @@ col_ts, col_btn = st.columns([5, 1])
 with col_ts:
     st.caption(f"Data refreshed {data_ts.astimezone(ZoneInfo('America/Toronto')):%b %d, %Y · %I:%M %p ET} · panels auto-refresh every 5 min · ↻ Refresh reloads now")
 with col_btn:
-    if st.button("↻ Refresh", use_container_width=True):
+    if st.button("↻ Refresh", width="stretch"):
         st.cache_data.clear()
         st.rerun()
 
@@ -716,7 +716,7 @@ def _tab_overview():
 
     c1, c2 = st.columns([1, 2])
     with c1:
-        st.plotly_chart(gauge(score, "Composite Sentiment"), use_container_width=True)
+        st.plotly_chart(gauge(score, "Composite Sentiment"), width="stretch")
         reg = S.regime(score)
         color = {"Risk-On": "green", "Neutral": "gray", "Risk-Off": "orange",
                  "Extreme Fear": "red"}[reg]
@@ -732,7 +732,7 @@ def _tab_overview():
                            margin=dict(t=30, b=10, l=10, r=10),
                            yaxis=dict(range=[0, 100]), xaxis_title="",
                            yaxis_title="")
-        st.plotly_chart(sfig, use_container_width=True)
+        st.plotly_chart(sfig, width="stretch")
         st.caption("Verticals: FOMC decisions (gray dash) · CPI releases "
                    "(light dot).")
         _hist_df = pd.DataFrame({"date": hdates, "composite": hist})
@@ -741,7 +741,7 @@ def _tab_overview():
                            "composite_history.csv", "text/csv",
                            key="dl_composite_hist")
         st.plotly_chart(SA.attribution_figure(breakdown, S.WEIGHTS),
-                        use_container_width=True)
+                        width="stretch")
         _yd = SA.sleeve_deltas(components, past_comps[0])
         if _yd:
             _rows = sorted(_yd.items(), key=lambda kv: kv[1])
@@ -754,7 +754,7 @@ def _tab_overview():
         rows = [{"Component": k, "Score": round(v["score"], 1),
                  "Weight": f"{int(S.WEIGHTS[k]*100)}%", "Detail": v["detail"]}
                 for k, v in breakdown.items()]
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
         st.caption("100 = most bullish. Headline is the 3-day average "
                    f"(today {score_today:.1f}). Weights: " +
                    ", ".join(f"{k} {int(w * 100)}%"
@@ -795,7 +795,7 @@ def _tab_overview():
             _bits = [f"{_nm} {'▲' if _d >= 0 else '▼'} {_d:+.1f} pts"
                      for _nm, _contrib, _d in _top]
             st.markdown("**Top drivers of the move:** " + " · ".join(_bits) + ".")
-        st.dataframe(pd.DataFrame(_wrows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(_wrows), width="stretch", hide_index=True)
         if _seeded:
             st.caption("Prior record is the v2 backtest seed (through Sep 29, 2026) — "
                        "Positioning and News had no live history then, and the deltas "
@@ -830,7 +830,7 @@ def _tab_overview():
                                 height=260, margin=dict(t=40, b=10, l=10, r=10),
                                 yaxis=dict(range=[0, 100]),
                                 xaxis_title="", yaxis_title="")
-            st.plotly_chart(_hfig, use_container_width=True)
+            st.plotly_chart(_hfig, width="stretch")
         _ext = H.extremes(_recs)
         if _ext:
             _erows = [{"Date": e["date"],
@@ -843,7 +843,7 @@ def _tab_overview():
                                     if e.get("fwd20_pct") is not None
                                     else "pending")}
                       for e in _ext]
-            st.dataframe(pd.DataFrame(_erows), use_container_width=True,
+            st.dataframe(pd.DataFrame(_erows), width="stretch",
                          hide_index=True)
             st.caption(f"{len(_ext)} extreme days shown (composite ≥ 70 or ≤ 30), "
                        "newest first. History 2015 – Sep 2026 is the v2 backtest "
@@ -902,7 +902,7 @@ def _tab_overview():
             fig = line_chart(df, f"{label} — past year",
                              extra={"50-day avg": ma50})
             fig.update_layout(height=240, margin=dict(t=35, b=10))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     with mcols[2]:
         # Displayed 10Y = FRED DGS10 official close via the shared accessor
         # (load_ten_year) — the same value Fed Watch and Macro show. The
@@ -920,17 +920,17 @@ def _tab_overview():
                               extra={"50-day avg":
                                      _y10["close"].rolling(50).mean()})
             _fig.update_layout(height=240, margin=dict(t=35, b=10))
-            st.plotly_chart(_fig, use_container_width=True)
+            st.plotly_chart(_fig, width="stretch")
 
     st.subheader("Fear context & rotation")
     f1, f2 = st.columns(2)
     with f1:
         st.plotly_chart(gauge(fear, "Fear Context (VIX/SPX)", invert=True),
-                        use_container_width=True)
+                        width="stretch")
         st.caption(f"{fear_detail} — market volatility, not news.")
     with f2:
         st.plotly_chart(gauge(rot, "Risk-Off Rotation", invert=True),
-                        use_container_width=True)
+                        width="stretch")
         st.caption(f"{rot_detail} — growth vs safe-haven day move.")
 
     st.subheader("Cross-asset context")
@@ -981,7 +981,7 @@ def _tab_indices():
                 df.tail(252), f"{name} — 1 year",
                 {"SMA 50": sma(df["close"], 50).tail(252),
                  "SMA 200": sma(df["close"], 200).tail(252)}),
-                use_container_width=True)
+                width="stretch")
         with c2:
             def fmt(x, suffix=""):
                 return "—" if x is None else f"{x:,.2f}{suffix}"
@@ -996,7 +996,7 @@ def _tab_indices():
                 {"Metric": "1-day return", "Value": fmt(s["ret_1d"], "%")},
                 {"Metric": "1-week return", "Value": fmt(s["ret_1w"], "%")},
                 {"Metric": "1-month return", "Value": fmt(s["ret_1m"], "%")},
-            ]), use_container_width=True, hide_index=True)
+            ]), width="stretch", hide_index=True)
 
 with tabs[1]:
     _tab_indices()
@@ -1041,7 +1041,7 @@ def _tab_volatility():
     if not vm["VIX"].empty:
         st.plotly_chart(line_chart(vm["VIX"].tail(252), "VIX — 1 year",
                                    {"SMA 50": sma(vm["VIX"]["close"], 50).tail(252)}),
-                        use_container_width=True)
+                        width="stretch")
         vix = float(vm["VIX"]["close"].iloc[-1])
         st.write(f"**VIX {vix:.1f}** — " +
                  ("complacent (<15)" if vix < 15 else
@@ -1051,7 +1051,7 @@ def _tab_volatility():
     if not vx["VVIX"].empty:
         st.plotly_chart(line_chart(vx["VVIX"].tail(252), "VVIX — volatility of VIX, 1 year",
                                    {"SMA 50": sma(vx["VVIX"]["close"], 50).tail(252)}),
-                        use_container_width=True)
+                        width="stretch")
         vv = float(vx["VVIX"]["close"].iloc[-1])
         st.write(f"**VVIX {vv:.0f}** — " +
                  ("elevated (>120): heavy demand for volatility protection" if vv > 120 else
@@ -1061,7 +1061,7 @@ def _tab_volatility():
     if not vx["SKEW"].empty:
         st.plotly_chart(line_chart(vx["SKEW"].tail(252), "SKEW — tail-risk pricing, 1 year",
                                    {"SMA 50": sma(vx["SKEW"]["close"], 50).tail(252)}),
-                        use_container_width=True)
+                        width="stretch")
         sk = float(vx["SKEW"]["close"].iloc[-1])
         st.write(f"**SKEW {sk:.0f}** — " +
                  ("elevated (≥135): downside protection is expensive" if sk >= 135 else
@@ -1071,7 +1071,7 @@ def _tab_volatility():
     if not vx["MOVE"].empty:
         st.plotly_chart(line_chart(vx["MOVE"].tail(252), "MOVE — bond-market volatility, 1 year",
                                    {"SMA 50": sma(vx["MOVE"]["close"], 50).tail(252)}),
-                        use_container_width=True)
+                        width="stretch")
         mv = float(vx["MOVE"]["close"].iloc[-1])
         st.write(f"**MOVE {mv:.0f}** — " +
                  ("stressed (≥140): bond volatility pricing real rates risk" if mv >= 140 else
@@ -1087,7 +1087,7 @@ def _tab_volatility():
             fig.add_trace(go.Scatter(x=s.index, y=s, name=name))
         fig.update_layout(title="VIX term structure — 1 year", height=320,
                           margin=dict(t=40, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         l9, l30, l3 = (float(v9d["close"].iloc[-1]),
                        float(vm["VIX"]["close"].iloc[-1]),
                        float(v3m["close"].iloc[-1]))
@@ -1107,7 +1107,7 @@ def _tab_volatility():
         fig.update_layout(title=f"VX futures curve — as of {vx_fut_asof:%b %d, %Y}",
                           height=320, margin=dict(t=40, b=10),
                           xaxis_title="Expiration", yaxis_title="Price")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         front = float(vx_fut["price"].iloc[0])
         back = float(vx_fut["price"].iloc[-1])
         st.write(f"**Front {front:.2f} → back {back:.2f}** — " +
@@ -1129,7 +1129,7 @@ def _tab_volatility():
             fig.add_trace(go.Scatter(x=both.index, y=both[col], name=col))
         fig.update_layout(title="30-day realized vol vs VIX — 1 year", height=320,
                           margin=dict(t=40, b=10), yaxis_title="Vol (ann. %)")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         lv, lr = float(both["VIX (implied)"].iloc[-1]), float(both["Realized 30D"].iloc[-1])
         st.write(f"**VIX {lv:.1f} vs realized {lr:.1f}** — " +
                  ("options pricing fear the tape hasn't shown yet" if lv - lr > 2 else
@@ -1146,7 +1146,7 @@ def _tab_volatility():
         disp = ratio.tail(504)  # 2y chart window
         fig = line_chart(pd.DataFrame({"close": disp}), "HYG / LQD — 2 years",
                          {"SMA 50": sma(ratio, 50).tail(504)})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         rl = float(ratio.iloc[-1])
         m50 = float(sma(ratio, 50).iloc[-1])
         st.write(f"**HYG/LQD {rl:.3f}** — " +
@@ -1248,7 +1248,7 @@ def _tab_macro():
             fig = go.Figure(go.Scatter(x=s.index, y=s, line=dict(width=2)))
             fig.update_layout(title=f"{FR.ECON_SERIES[sid]} — 5 years",
                               height=300, margin=dict(t=40, b=10))
-            (col or st).plotly_chart(fig, use_container_width=True)
+            (col or st).plotly_chart(fig, width="stretch")
 
         st.subheader("Inflation")
         econ_cards(["CPIAUCSL", "PCEPI", "PCEPILFE", "T5YIE"])
@@ -1269,7 +1269,7 @@ def _tab_macro():
         fig.add_trace(go.Scatter(x=y10.index, y=y10, name="10Y"))
         fig.update_layout(title="Treasury yields (FRED) — 5 years",
                           height=300, margin=dict(t=40, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         spr_hist = (y10 - y2).dropna().tail(260)
         fig = go.Figure(go.Scatter(x=spr_hist.index, y=spr_hist,
                                    line=dict(width=2),
@@ -1278,7 +1278,7 @@ def _tab_macro():
         fig.update_layout(title="10Y–2Y spread — 5 years",
                           height=300, margin=dict(t=40, b=10),
                           yaxis_ticksuffix="pp")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("US Treasury yield curve")
         yc = load_yield_curve()
@@ -1317,7 +1317,7 @@ def _tab_macro():
             fig.update_layout(height=380, margin=dict(t=40, b=10),
                               xaxis_title="Maturity", yaxis_title="Yield (%)",
                               yaxis_ticksuffix="%")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
             d = {p[1]: p[2] for p in curves[0][0]}
             if "10Y" in d and "2Y" in d:
                 spr = d["10Y"] - d["2Y"]
@@ -1376,7 +1376,7 @@ def _tab_macro():
             nfig.add_hline(y=0, line_dash="dash", line_color="gray")
             nfig.update_layout(title="NFCI — 5 years (above 0 = tighter than average)",
                                height=300, margin=dict(t=40, b=10))
-            st.plotly_chart(nfig, use_container_width=True)
+            st.plotly_chart(nfig, width="stretch")
             st.caption("Chicago Fed National Financial Conditions Index: 105 weekly "
                        "financial indicators standardized — positive values mean "
                        "conditions are tighter than their historical (1971–) average, "
@@ -1394,7 +1394,7 @@ def _tab_macro():
     else:
         st.plotly_chart(line_chart(vm["DXY (USD Index)"].tail(252), "DXY — 1 year",
                                    {"SMA 50": sma(vm["DXY (USD Index)"]["close"], 50).tail(252)}),
-                        use_container_width=True)
+                        width="stretch")
         st.markdown("- " + C.dxy_commentary(vm["DXY (USD Index)"]))
 
 with tabs[3]:
@@ -1423,7 +1423,7 @@ def _tab_sector_rotation():
         fig.update_layout(title="S&P sector rotation — 1-month returns",
                           height=380, margin=dict(t=40, b=100))
         fig.update_xaxes(tickangle=45)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with c2:
         colors = ["#2ecc71" if x >= 0 else "#e74c3c" for x in pdf["3M %"]]
         fig = go.Figure(go.Bar(x=pdf["Sector"], y=pdf["3M %"],
@@ -1431,14 +1431,14 @@ def _tab_sector_rotation():
         fig.update_layout(title="S&P sector rotation — 3-month returns",
                           height=380, margin=dict(t=40, b=100))
         fig.update_xaxes(tickangle=45)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     off = pdf[pdf["Sector"].isin(OFFENSIVE_SECTORS)]["1M %"].mean()
     dfn = pdf[pdf["Sector"].isin(DEFENSIVE_SECTORS)]["1M %"].mean()
     st.info(f"**Rotation read:** offensive sectors avg {off:+.1f}% vs defensive "
             f"{dfn:+.1f}% over 1M — "
             f"{'risk-on tilt' if off > dfn else 'defensive tilt'}.")
     st.dataframe(pdf.style.format({"1M %": "{:+.2f}%", "3M %": "{:+.2f}%"}),
-                 use_container_width=True, hide_index=True)
+                 width="stretch", hide_index=True)
 
 with tabs[4]:
     _tab_sector_rotation()
@@ -1479,7 +1479,7 @@ def _tab_news_risk():
                 meter, "Headline Risk",
                 steps=[{"range": [lo, hi], "color": c}
                        for _lbl, lo, hi, c in HEADLINE_RISK_BANDS]),
-                use_container_width=True)
+                width="stretch")
             segs = "".join(
                 f"<div style='flex:1;background:{c};"
                 f"color:{'#fff' if i >= 2 else '#333'};text-align:center;"
@@ -1513,7 +1513,7 @@ def _tab_news_risk():
                                 height=240, margin=dict(t=40, b=10, l=10, r=10),
                                 yaxis=dict(range=[0, 100]),
                                 xaxis_title="", yaxis_title="")
-            st.plotly_chart(_nfig, use_container_width=True)
+            st.plotly_chart(_nfig, width="stretch")
             st.caption("One point per weekday snapshot (recorded after the close). "
                        "History accrues from Oct 22, 2026 — no backfill exists for "
                        "a live headline gauge.")
@@ -1552,7 +1552,7 @@ def _tab_news_risk():
                 title=f"Headlines mentioning each theme (of {len(headlines)} fetched)",
                 height=280, margin=dict(t=40, b=10, l=10, r=10),
                 xaxis_title="Headlines")
-            st.plotly_chart(_tfig, use_container_width=True)
+            st.plotly_chart(_tfig, width="stretch")
         else:
             st.caption("No tracked themes in today's headlines.")
     else:
@@ -1620,7 +1620,7 @@ def _tab_econ_calendar():
                     out.append(itint)
             return out
         st.dataframe(cdf.style.apply(highlight, axis=1),
-                     use_container_width=True, hide_index=True)
+                     width="stretch", hide_index=True)
         st.caption("Source: Nasdaq economic calendar (times ET). Released events "
                    "stay on the calendar all week — actuals are highlighted "
                    "🟢 green when better than forecast/previous, 🔴 red when worse. "
@@ -1702,7 +1702,7 @@ def _tab_earnings():
                         out.append("")
                 return out
             st.dataframe(pd.DataFrame(rrows).style.apply(earn_highlight, axis=1),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
             st.caption("Surprise 🟢 green = beat, 🔴 red = miss vs consensus.")
         else:
             st.caption("Nothing reported yet.")
@@ -1719,7 +1719,7 @@ def _tab_earnings():
                     row["Rev est."] = FMP.fmt_revenue(r.get("revenue_est"))
                 rows.append(row)
             st.dataframe(pd.DataFrame(rows),
-                         use_container_width=True, hide_index=True)
+                         width="stretch", hide_index=True)
         st.caption("Source: Nasdaq earnings calendar. Filtered to companies ≥ $5B market cap.")
 
         st.subheader("Implied-move scorecard — chain names")
@@ -1736,7 +1736,7 @@ def _tab_earnings():
                     "Implied move": (f"±{_iv['implied_pct']:.1f}%"
                                      if _iv else "n/a"),
                     "Straddle expiry": (_iv["expiry"] if _iv else "—")})
-            st.dataframe(pd.DataFrame(_urows), use_container_width=True,
+            st.dataframe(pd.DataFrame(_urows), width="stretch",
                          hide_index=True)
         else:
             st.caption("No chain-name prints (NVDA, AMD, MU, AAPL, META, GOOG) "
@@ -1755,7 +1755,7 @@ def _tab_earnings():
                     "Result": ("—" if _real is None or _imp is None else
                                "within implied" if _real <= _imp
                                else "beyond implied")})
-            st.dataframe(pd.DataFrame(_srows), use_container_width=True,
+            st.dataframe(pd.DataFrame(_srows), width="stretch",
                          hide_index=True)
         st.caption("Implied = ATM straddle ÷ spot from the CBOE delayed chain, "
                    "captured before the print — never backfilled. Actual = "
@@ -1804,7 +1804,7 @@ def _tab_gex():
         _gfig.update_yaxes(title_text="Net GEX ($M/pt)", secondary_y=False)
         _gfig.update_yaxes(title_text="Spot \u2212 \u03b3flip (pts)",
                            secondary_y=True)
-        st.plotly_chart(_gfig, use_container_width=True)
+        st.plotly_chart(_gfig, width="stretch")
         st.caption("Source: data/options_history.csv (daily archive).")
 
     st.subheader("Put/call — SPY open interest")
@@ -1821,7 +1821,7 @@ def _tab_gex():
                         annotation_text=f"Trailing median {_med_pc:.2f}")
         _pfig.update_layout(title="SPY — put/call open-interest ratio",
                             height=280, margin=dict(t=40, b=10))
-        st.plotly_chart(_pfig, use_container_width=True)
+        st.plotly_chart(_pfig, width="stretch")
         _vs = "heavier" if _latest_pc > _med_pc else "lighter"
         st.write(f"Latest **{_latest_pc:.2f}** (trailing median "
                  f"{_med_pc:.2f}) — put hedging {_vs} than usual. SPY puts "
@@ -1893,7 +1893,7 @@ def _tab_gex():
                     f"archive snapshot (as of {g['as_of']} close).")
         st.plotly_chart(G.gex_chart(g, f"{name} — net GEX by strike "
                                       f"({', '.join(g['expiries'])})"),
-                        use_container_width=True)
+                        width="stretch")
         st.info(f"**Read:** {G.gex_read(g)}")
         _strikes = g.get("strikes")
         if _strikes is not None:
@@ -1951,7 +1951,7 @@ def _tab_fed_watch():
             st.markdown(f"#### {m['date'].strftime('%B %d, %Y')} "
                         f"— decision day ({m['days_away']} days away)")
             st.plotly_chart(F.fedwatch_chart(m, "Implied probabilities"),
-                            use_container_width=True)
+                            width="stretch")
             st.info(f"**Read:** {F.fedwatch_read(m)}")
             if fwh and m["date"] in fwh:
                 st.plotly_chart(
@@ -1959,11 +1959,11 @@ def _tab_fed_watch():
                         fwh[m["date"]],
                         f"{m['date'].strftime('%b %d')} meeting — "
                         "probability history (90 days)"),
-                    use_container_width=True)
+                    width="stretch")
         rates5y = load_fed_rates_5y()
         if rates5y is not None:
             st.plotly_chart(fed_rates_5y_chart(rates5y),
-                            use_container_width=True)
+                            width="stretch")
             st.caption("Daily; shaded band = FOMC target range. Source: FRED "
                        "(DFEDTARU, DFEDTARL, DFF). "
                        "Verticals: FOMC decisions (gray dash) \u00b7 CPI releases "
